@@ -47,12 +47,16 @@ http://127.0.0.1:8877/
 python -m unittest tests.test_catalog_builder -v
 ```
 
-## GitHub 上传说明
+## GitHub
 
-这个文件夹目前可以作为独立项目上传到 GitHub。上传需要满足其中一种条件：
+项目已上传到：
 
-- 本机安装并登录 GitHub CLI：`gh auth login`
-- GitHub 插件能正常连接，并提供已有仓库名称
-- 用户提供一个可推送的 GitHub 远端地址
+```text
+https://github.com/ovoclare/Change-of-Flow
+```
 
-当前环境里 `gh` 命令不可用，GitHub 插件握手也曾超时，所以本地原型可以先完成；上传需要等 GitHub 连接条件满足后再执行。
+本地仓库远端：
+
+```powershell
+git remote -v
+```
