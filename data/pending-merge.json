@@ -1,0 +1,138 @@
+[
+  {
+    "objectId": "HL-0014",
+    "title": "龙首青铜盉",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0014",
+      "IMG-0015"
+    ],
+    "fileNames": [
+      "龙首青铜盉-2.jpg",
+      "龙首青铜盉.jpg"
+    ]
+  },
+  {
+    "objectId": "HL-0015",
+    "title": "龙首风盖青铜盉",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0016",
+      "IMG-0017"
+    ],
+    "fileNames": [
+      "龙首风盖青铜盉-2.jpg",
+      "龙首风盖青铜盉.jpg"
+    ]
+  },
+  {
+    "objectId": "HL-0118",
+    "title": "大汶口文化猪形陶鬶",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0120",
+      "IMG-0121"
+    ],
+    "fileNames": [
+      "大汶口文化猪形陶鬶.png",
+      "大汶口文化猪形陶鬹.png"
+    ]
+  },
+  {
+    "objectId": "HL-0128",
+    "title": "新石器时代龙山文化黑陶鬶",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0131",
+      "IMG-0132"
+    ],
+    "fileNames": [
+      "新石器时代龙山文化黑陶鬶 (2).png",
+      "新石器时代龙山文化黑陶鬶.png"
+    ]
+  },
+  {
+    "objectId": "HL-0129",
+    "title": "河姆渡文化鸟形盉",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0133",
+      "IMG-0134",
+      "IMG-0135",
+      "IMG-0136"
+    ],
+    "fileNames": [
+      "河姆渡文化鸟形盉 (1).png",
+      "河姆渡文化鸟形盉 (2).png",
+      "河姆渡文化鸟形盉 (3).png",
+      "河姆渡文化鸟形盉 (4).png"
+    ]
+  },
+  {
+    "objectId": "HL-0130",
+    "title": "河姆渡文化 龟形刻纹陶盉 浙江余姚田螺山遗址出土 河姆渡遗址博物馆藏",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0137",
+      "IMG-0138",
+      "IMG-0139"
+    ],
+    "fileNames": [
+      "河姆渡文化 龟形刻纹陶盉 浙江余姚田螺山遗址出土 河姆渡遗址博物馆藏 (1).png",
+      "河姆渡文化 龟形刻纹陶盉 浙江余姚田螺山遗址出土 河姆渡遗址博物馆藏 (2).png",
+      "河姆渡文化 龟形刻纹陶盉 浙江余姚田螺山遗址出土 河姆渡遗址博物馆藏 (3).png"
+    ]
+  },
+  {
+    "objectId": "HL-0132",
+    "title": "良渚文化宽把壶",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0141",
+      "IMG-0142"
+    ],
+    "fileNames": [
+      "良渚文化宽把壶 (1).png",
+      "良渚文化宽把壶 (2).png"
+    ]
+  },
+  {
+    "objectId": "HL-0133",
+    "title": "良渚文化红陶盉",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0143",
+      "IMG-0144"
+    ],
+    "fileNames": [
+      "良渚文化红陶盉 (2).png",
+      "良渚文化红陶盉.png"
+    ]
+  },
+  {
+    "objectId": "HL-0175",
+    "title": "宋-大余滩头窑-执壶流残件",
+    "reason": "文件名序号或标题归并候选",
+    "status": "pending_review",
+    "imageIds": [
+      "IMG-0186",
+      "IMG-0187",
+      "IMG-0188",
+      "IMG-0189"
+    ],
+    "fileNames": [
+      "宋-大余滩头窑-执壶流残件 (1).jpg",
+      "宋-大余滩头窑-执壶流残件 (2).jpg",
+      "宋-大余滩头窑-执壶流残件 (3).jpg",
+      "宋-大余滩头窑-执壶流残件 (4).jpg"
+    ]
+  }
+]

@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>壶流论文图库</title>
+    <link rel="stylesheet" href="/prototype/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <strong>流之变图库</strong>
+        <span>论文分期原型</span>
+      </div>
+      <div class="searchbar">
+        <input id="searchInput" type="search" placeholder="搜索时代、器类、窑口、馆藏、文件名" />
+        <select id="natureFilter" aria-label="资料性质">
+          <option value="all">全部资料</option>
+          <option value="core">陶瓷壶流本体</option>
+          <option value="predecessor">前身/源流参照</option>
+        </select>
+        <select id="statusFilter" aria-label="审阅状态">
+          <option value="all">全部状态</option>
+          <option value="待审阅">待审阅</option>
+          <option value="已审阅">已审阅</option>
+        </select>
+      </div>
+      <div id="stats" class="stats">载入中</div>
+    </header>
+
+    <main class="workspace">
+      <aside class="sidebar">
+        <section>
+          <h2>论文分期</h2>
+          <nav id="phaseNav" class="phase-nav"></nav>
+        </section>
+        <section class="side-block">
+          <h2>待确认合并</h2>
+          <div id="mergeSummary" class="merge-summary">载入中</div>
+        </section>
+      </aside>
+
+      <section class="gallery-panel">
+        <div class="panel-head">
+          <div>
+            <h1 id="viewTitle">全部条目</h1>
+            <p id="viewSubtitle">按论文分期审阅壶流形制资料</p>
+          </div>
+          <div class="panel-actions">
+            <button id="clearFilters" type="button">清除筛选</button>
+          </div>
+        </div>
+        <div id="gallery" class="gallery" aria-live="polite"></div>
+      </section>
+
+      <aside class="detail-panel">
+        <div id="detailHeader" class="detail-header"></div>
+        <div class="image-stage">
+          <button id="prevObject" class="nav-button" type="button" aria-label="上一件">‹</button>
+          <img id="mainImage" alt="" />
+          <button id="nextObject" class="nav-button" type="button" aria-label="下一件">›</button>
+        </div>
+        <div id="detailContent" class="detail-content"></div>
+        <div id="imageStrip" class="image-strip"></div>
+      </aside>
+    </main>
+
+    <script type="module" src="/prototype/app.js"></script>
+  </body>
+</html>
