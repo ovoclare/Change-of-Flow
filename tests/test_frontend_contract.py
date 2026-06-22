@@ -74,6 +74,28 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn(".timeline-object", css)
         self.assertIn("overflow-x: auto", css)
 
+    def test_timeline_has_featured_representative_image(self):
+        app = self.read("prototype/app.js")
+        css = self.read("prototype/styles.css")
+        self.assertIn("representativeObject", app)
+        self.assertIn("timelineFeaturedCard", app)
+        self.assertIn("timeline-featured", app)
+        self.assertIn("object.id !== representative.id", app)
+        self.assertIn(".timeline-featured", css)
+        self.assertIn(".timeline-featured img", css)
+
+    def test_timeline_hover_preview_exists(self):
+        app = self.read("prototype/app.js")
+        css = self.read("prototype/styles.css")
+        self.assertIn("imageHoverPreview", app)
+        self.assertIn("showImageHoverPreview", app)
+        self.assertIn("hideImageHoverPreview", app)
+        self.assertIn("positionImageHoverPreview", app)
+        self.assertIn("mouseenter", app)
+        self.assertIn(".image-hover-preview", css)
+        self.assertIn("pointer-events: none", css)
+        self.assertIn("transition: opacity", css)
+
 
 if __name__ == "__main__":
     unittest.main()

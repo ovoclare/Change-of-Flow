@@ -69,6 +69,8 @@ const els = {
   nextObject: document.querySelector("#nextObject"),
 };
 
+let imageHoverPreview = null;
+
 async function loadCatalog() {
   const response = await fetch("/api/catalog", { cache: "no-store" });
   if (!response.ok) {
@@ -332,6 +334,7 @@ function renderTimeline() {
 }
 
 function timelineEraColumn(group) {
+  const representative = representativeObject(group.objects);
   const column = document.createElement("section");
   column.className = "timeline-era";
   column.innerHTML = `
@@ -341,12 +344,44 @@ function timelineEraColumn(group) {
       <p>${group.objects.length} 件</p>
     </header>
   `;
+  if (representative) {
+    column.append(timelineFeaturedCard(representative));
+  }
   const stack = document.createElement("div");
   stack.className = "timeline-stack";
-  const cards = group.objects.map((object) => timelineObjectCard(object));
+  const smallObjects = representative ? group.objects.filter((object) => object.id !== representative.id) : group.objects;
+  const cards = smallObjects.map((object) => timelineObjectCard(object));
   stack.replaceChildren(...cards);
   column.append(stack);
   return column;
+}
+
+function representativeObject(objects) {
+  return objects
+    .slice()
+    .sort((a, b) => {
+      if (a.isCeramicSpoutCore !== b.isCeramicSpoutCore) {
+        return a.isCeramicSpoutCore ? -1 : 1;
+      }
+      return a.title.localeCompare(b.title, "zh-Hans-CN");
+    })[0] ?? null;
+}
+
+function timelineFeaturedCard(object) {
+  const image = firstNormalImage(object);
+  const card = document.createElement("article");
+  card.className = `timeline-featured ${object.id === state.selectedObjectId ? "active" : ""}`;
+  card.tabIndex = 0;
+  card.innerHTML = `
+    <img src="${image ? imageUrl(image.id) : ""}" alt="${escapeHtml(object.title)}" loading="lazy">
+    <div>
+      <span>典型代表</span>
+      <strong>${escapeHtml(object.title)}</strong>
+      <em>${escapeHtml(object.flowForm)} · ${escapeHtml(object.id)}</em>
+    </div>
+  `;
+  bindTimelineCard(card, object, image);
+  return card;
 }
 
 function timelineObjectCard(object) {
@@ -361,6 +396,11 @@ function timelineObjectCard(object) {
       <span>${escapeHtml(object.flowForm)} · ${escapeHtml(object.id)}</span>
     </div>
   `;
+  bindTimelineCard(card, object, image);
+  return card;
+}
+
+function bindTimelineCard(card, object, image) {
   card.addEventListener("click", () => selectObject(object.id));
   card.addEventListener("keydown", (event) => {
     if (event.key === "Enter" || event.key === " ") {
@@ -368,7 +408,58 @@ function timelineObjectCard(object) {
       selectObject(object.id);
     }
   });
-  return card;
+  if (!image) return;
+  card.addEventListener("pointerenter", (event) => showImageHoverPreview(image, object.title, event));
+  card.addEventListener("pointermove", positionImageHoverPreview);
+  card.addEventListener("pointerleave", hideImageHoverPreview);
+  card.addEventListener("mouseenter", (event) => showImageHoverPreview(image, object.title, event));
+  card.addEventListener("mousemove", positionImageHoverPreview);
+  card.addEventListener("mouseleave", hideImageHoverPreview);
+  card.addEventListener("focus", (event) => showImageHoverPreview(image, object.title, event));
+  card.addEventListener("blur", hideImageHoverPreview);
+}
+
+function ensureImageHoverPreview() {
+  if (imageHoverPreview) return imageHoverPreview;
+  imageHoverPreview = document.createElement("div");
+  imageHoverPreview.id = "imageHoverPreview";
+  imageHoverPreview.className = "image-hover-preview";
+  imageHoverPreview.innerHTML = `<img alt=""><span></span>`;
+  document.body.append(imageHoverPreview);
+  return imageHoverPreview;
+}
+
+function showImageHoverPreview(image, title, event) {
+  const preview = ensureImageHoverPreview();
+  const img = preview.querySelector("img");
+  const caption = preview.querySelector("span");
+  img.src = imageUrl(image.id);
+  img.alt = title;
+  caption.textContent = title;
+  preview.classList.add("visible");
+  positionImageHoverPreview(event);
+}
+
+function positionImageHoverPreview(event) {
+  if (!imageHoverPreview) return;
+  const point = event.touches?.[0] ?? event;
+  const margin = 18;
+  const previewWidth = imageHoverPreview.offsetWidth || 280;
+  const previewHeight = imageHoverPreview.offsetHeight || 330;
+  let left = point.clientX + margin;
+  let top = point.clientY + margin;
+  if (left + previewWidth > window.innerWidth - margin) {
+    left = point.clientX - previewWidth - margin;
+  }
+  if (top + previewHeight > window.innerHeight - margin) {
+    top = window.innerHeight - previewHeight - margin;
+  }
+  imageHoverPreview.style.transform = `translate3d(${Math.max(margin, left)}px, ${Math.max(margin, top)}px, 0) scale(1)`;
+}
+
+function hideImageHoverPreview() {
+  if (!imageHoverPreview) return;
+  imageHoverPreview.classList.remove("visible");
 }
 
 function selectObject(objectId) {
