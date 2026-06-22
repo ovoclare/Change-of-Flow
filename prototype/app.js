@@ -1,14 +1,49 @@
+const ERA_ORDER = [
+  "河姆渡文化",
+  "大汶口文化",
+  "良渚文化",
+  "龙山文化",
+  "二里头文化",
+  "商",
+  "商早期",
+  "商周",
+  "西周",
+  "战国",
+  "汉",
+  "东晋",
+  "魏晋南北朝",
+  "南朝",
+  "唐",
+  "北宋",
+  "南宋",
+  "宋元",
+  "明洪武",
+  "明永乐",
+  "明宣德",
+  "明嘉靖",
+  "明隆庆",
+  "明万历",
+  "明",
+  "明晚期",
+  "清康熙",
+  "清乾隆",
+  "晚清",
+  "待判断",
+];
+
 const state = {
   catalog: null,
   imageById: new Map(),
   objects: [],
   filteredObjects: [],
+  viewMode: "grid",
   selectedPhase: "all",
   selectedObjectId: null,
   selectedImageId: null,
   query: "",
   nature: "all",
   status: "all",
+  timelineKiln: "",
   reviewSaveMessage: "",
 };
 
@@ -27,6 +62,9 @@ const els = {
   natureFilter: document.querySelector("#natureFilter"),
   statusFilter: document.querySelector("#statusFilter"),
   clearFilters: document.querySelector("#clearFilters"),
+  gridViewMode: document.querySelector("#gridViewMode"),
+  timelineViewMode: document.querySelector("#timelineViewMode"),
+  timelineKilnSelect: document.querySelector("#timelineKilnSelect"),
   prevObject: document.querySelector("#prevObject"),
   nextObject: document.querySelector("#nextObject"),
 };
@@ -76,10 +114,20 @@ function matchesFilters(object) {
   return true;
 }
 
+function matchesTimelineFilters(object) {
+  if (state.timelineKiln && object.kilnOrCulture !== state.timelineKiln) return false;
+  if (state.nature === "core" && !object.isCeramicSpoutCore) return false;
+  if (state.nature === "predecessor" && object.isCeramicSpoutCore) return false;
+  if (state.status !== "all" && object.reviewStatus !== state.status) return false;
+  if (state.query && !objectSearchText(object).includes(state.query.toLowerCase())) return false;
+  return true;
+}
+
 function applyFilters() {
   state.filteredObjects = state.objects.filter(matchesFilters);
-  if (!state.filteredObjects.some((object) => object.id === state.selectedObjectId)) {
-    state.selectedObjectId = state.filteredObjects[0]?.id ?? null;
+  const selectionPool = state.viewMode === "timeline" ? timelineObjects() : state.filteredObjects;
+  if (!selectionPool.some((object) => object.id === state.selectedObjectId)) {
+    state.selectedObjectId = selectionPool[0]?.id ?? null;
     state.selectedImageId = null;
   }
   render();
@@ -91,6 +139,56 @@ function phaseCounts() {
     counts.set(object.phaseId, (counts.get(object.phaseId) ?? 0) + 1);
   }
   return counts;
+}
+
+function availableTimelineKilns() {
+  const kilnMap = new Map();
+  for (const object of state.objects) {
+    const kiln = object.kilnOrCulture || "待判断";
+    if (!kilnMap.has(kiln)) {
+      kilnMap.set(kiln, { label: kiln, count: 0, eras: new Set() });
+    }
+    const item = kilnMap.get(kiln);
+    item.count += 1;
+    item.eras.add(object.era || "待判断");
+  }
+  return [...kilnMap.values()]
+    .map((item) => ({ label: item.label, count: item.count, eraCount: item.eras.size }))
+    .sort((a, b) => {
+      if (a.label === "待判断") return 1;
+      if (b.label === "待判断") return -1;
+      return b.eraCount - a.eraCount || b.count - a.count || a.label.localeCompare(b.label, "zh-Hans-CN");
+    });
+}
+
+function timelineObjects() {
+  return state.objects.filter(matchesTimelineFilters);
+}
+
+function buildTimelineGroups(objects) {
+  const groups = new Map();
+  for (const object of objects) {
+    const era = object.era || "待判断";
+    if (!groups.has(era)) {
+      groups.set(era, []);
+    }
+    groups.get(era).push(object);
+  }
+  return [...groups.entries()]
+    .map(([era, items]) => ({
+      era,
+      objects: items.slice().sort((a, b) => a.title.localeCompare(b.title, "zh-Hans-CN")),
+    }))
+    .sort((a, b) => compareEra(a.era, b.era));
+}
+
+function compareEra(a, b) {
+  return eraRank(a) - eraRank(b) || String(a).localeCompare(String(b), "zh-Hans-CN");
+}
+
+function eraRank(era) {
+  const index = ERA_ORDER.indexOf(era || "待判断");
+  return index === -1 ? ERA_ORDER.length + 100 : index;
 }
 
 function renderPhases() {
@@ -136,12 +234,25 @@ function renderMergeSummary() {
 }
 
 function renderViewHeader() {
+  if (state.viewMode === "timeline") {
+    const objects = timelineObjects();
+    const groups = buildTimelineGroups(objects);
+    els.viewTitle.textContent = `${state.timelineKiln || "未选择窑口"}时间轴`;
+    els.viewSubtitle.textContent = `${groups.length} 个时代 · ${objects.length} 件器物，按窑口/文化观察形制变化`;
+    return;
+  }
   const phase = state.selectedPhase === "all" ? null : state.catalog.phases.find((item) => item.id === state.selectedPhase);
   els.viewTitle.textContent = phase ? phase.label : "全部条目";
   els.viewSubtitle.textContent = `${state.filteredObjects.length} 件符合当前筛选`;
 }
 
 function renderGallery() {
+  renderViewControls();
+  if (state.viewMode === "timeline") {
+    renderTimeline();
+    return;
+  }
+  els.gallery.className = "gallery";
   if (!state.filteredObjects.length) {
     const empty = document.createElement("div");
     empty.className = "empty";
@@ -181,6 +292,83 @@ function renderGallery() {
     return card;
   });
   els.gallery.replaceChildren(...cards);
+}
+
+function renderViewControls() {
+  els.gridViewMode.classList.toggle("active", state.viewMode === "grid");
+  els.timelineViewMode.classList.toggle("active", state.viewMode === "timeline");
+  els.timelineKilnSelect.classList.toggle("hidden", state.viewMode !== "timeline");
+
+  const kilnOptions = availableTimelineKilns();
+  if (!state.timelineKiln && kilnOptions.length) {
+    state.timelineKiln = kilnOptions[0].label;
+  }
+  const optionNodes = kilnOptions.map((item) => {
+    const option = document.createElement("option");
+    option.value = item.label;
+    option.textContent = `${item.label}（${item.eraCount} 期 · ${item.count} 件）`;
+    option.selected = item.label === state.timelineKiln;
+    return option;
+  });
+  els.timelineKilnSelect.replaceChildren(...optionNodes);
+}
+
+function renderTimeline() {
+  const objects = timelineObjects();
+  const groups = buildTimelineGroups(objects);
+  els.gallery.className = "gallery timeline-view";
+  if (!groups.length) {
+    const empty = document.createElement("div");
+    empty.className = "empty timeline-empty";
+    empty.textContent = "这个窑口在当前筛选下没有条目";
+    els.gallery.replaceChildren(empty);
+    return;
+  }
+  const board = document.createElement("div");
+  board.className = "timeline-board";
+  const columns = groups.map((group) => timelineEraColumn(group));
+  board.replaceChildren(...columns);
+  els.gallery.replaceChildren(board);
+}
+
+function timelineEraColumn(group) {
+  const column = document.createElement("section");
+  column.className = "timeline-era";
+  column.innerHTML = `
+    <div class="timeline-marker" aria-hidden="true"><span></span></div>
+    <header class="timeline-era-head">
+      <h2>${escapeHtml(group.era)}</h2>
+      <p>${group.objects.length} 件</p>
+    </header>
+  `;
+  const stack = document.createElement("div");
+  stack.className = "timeline-stack";
+  const cards = group.objects.map((object) => timelineObjectCard(object));
+  stack.replaceChildren(...cards);
+  column.append(stack);
+  return column;
+}
+
+function timelineObjectCard(object) {
+  const image = firstNormalImage(object);
+  const card = document.createElement("article");
+  card.className = `timeline-object ${object.id === state.selectedObjectId ? "active" : ""}`;
+  card.tabIndex = 0;
+  card.innerHTML = `
+    <img src="${image ? imageUrl(image.id) : ""}" alt="${escapeHtml(object.title)}" loading="lazy">
+    <div>
+      <strong>${escapeHtml(object.title)}</strong>
+      <span>${escapeHtml(object.flowForm)} · ${escapeHtml(object.id)}</span>
+    </div>
+  `;
+  card.addEventListener("click", () => selectObject(object.id));
+  card.addEventListener("keydown", (event) => {
+    if (event.key === "Enter" || event.key === " ") {
+      event.preventDefault();
+      selectObject(object.id);
+    }
+  });
+  return card;
 }
 
 function selectObject(objectId) {
@@ -394,11 +582,14 @@ function render() {
 
 function preserveGalleryScroll(action) {
   const scrollTop = els.gallery?.scrollTop ?? 0;
+  const scrollLeft = els.gallery?.scrollLeft ?? 0;
   action();
   if (els.gallery) {
     els.gallery.scrollTop = scrollTop;
+    els.gallery.scrollLeft = scrollLeft;
     requestAnimationFrame(() => {
       els.gallery.scrollTop = scrollTop;
+      els.gallery.scrollLeft = scrollLeft;
     });
   }
 }
@@ -432,6 +623,20 @@ function bindEvents() {
     state.status = event.target.value;
     applyFilters();
   });
+  els.gridViewMode.addEventListener("click", () => {
+    state.viewMode = "grid";
+    applyFilters();
+  });
+  els.timelineViewMode.addEventListener("click", () => {
+    state.viewMode = "timeline";
+    state.selectedPhase = "all";
+    applyFilters();
+  });
+  els.timelineKilnSelect.addEventListener("change", (event) => {
+    state.timelineKiln = event.target.value;
+    state.selectedImageId = null;
+    applyFilters();
+  });
   els.clearFilters.addEventListener("click", () => {
     state.selectedPhase = "all";
     state.query = "";
@@ -458,6 +663,7 @@ async function init() {
     state.objects = state.catalog.objects;
     state.filteredObjects = state.objects;
     state.imageById = new Map(state.catalog.images.map((image) => [image.id, image]));
+    state.timelineKiln = availableTimelineKilns()[0]?.label ?? "";
     state.selectedObjectId = state.objects[0]?.id ?? null;
     render();
   } catch (error) {

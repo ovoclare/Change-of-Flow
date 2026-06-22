@@ -49,6 +49,31 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("saveObjectReview", app)
         self.assertIn("showReviewSaveMessage", app)
 
+    def test_timeline_view_controls_exist(self):
+        html = self.read("prototype/index.html")
+        app = self.read("prototype/app.js")
+        self.assertIn('id="gridViewMode"', html)
+        self.assertIn('id="timelineViewMode"', html)
+        self.assertIn('id="timelineKilnSelect"', html)
+        self.assertIn("viewMode", app)
+        self.assertIn("renderTimeline", app)
+        self.assertIn("buildTimelineGroups", app)
+
+    def test_timeline_groups_one_kiln_by_era(self):
+        app = self.read("prototype/app.js")
+        self.assertIn("timelineKiln", app)
+        self.assertIn("availableTimelineKilns", app)
+        self.assertIn("ERA_ORDER", app)
+        self.assertIn("object.kilnOrCulture", app)
+        self.assertIn("object.era", app)
+
+    def test_timeline_layout_css_exists(self):
+        css = self.read("prototype/styles.css")
+        self.assertIn(".timeline-view", css)
+        self.assertIn(".timeline-era", css)
+        self.assertIn(".timeline-object", css)
+        self.assertIn("overflow-x: auto", css)
+
 
 if __name__ == "__main__":
     unittest.main()
