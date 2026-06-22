@@ -252,7 +252,7 @@ h2 {
 .timeline-board {
   display: grid;
   grid-auto-flow: column;
-  grid-auto-columns: minmax(204px, 252px);
+  grid-auto-columns: minmax(216px, 270px);
   align-items: start;
   min-height: 100%;
   padding: 22px 18px 18px;
@@ -260,11 +260,22 @@ h2 {
 
 .timeline-era {
   position: relative;
+  display: grid;
+  grid-template-rows: auto auto 1fr;
+  align-content: start;
+  gap: 10px;
   min-width: 0;
   padding: 0 8px 12px;
 }
 
-.timeline-era::before {
+.timeline-rail {
+  position: relative;
+  display: grid;
+  grid-template-rows: 32px auto;
+  min-width: 0;
+}
+
+.timeline-rail::before {
   content: "";
   position: absolute;
   top: 15px;
@@ -294,7 +305,6 @@ h2 {
 .timeline-era-head {
   display: grid;
   gap: 2px;
-  margin-bottom: 10px;
   text-align: center;
 }
 
@@ -319,11 +329,15 @@ h2 {
   gap: 8px;
   min-width: 0;
   overflow: hidden;
-  margin-bottom: 10px;
   border: 1px solid var(--line);
   border-radius: 8px;
   background: #fff;
   cursor: pointer;
+  transform-origin: top center;
+  transition:
+    border-color 160ms ease,
+    transform 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .timeline-featured.active {
@@ -337,12 +351,20 @@ h2 {
   height: 148px;
   background: #eef2f5;
   object-fit: contain;
-  transition: transform 180ms ease;
+  transition: height 180ms ease, transform 180ms ease;
+}
+
+.timeline-featured:hover,
+.timeline-featured:focus {
+  border-color: rgba(31, 122, 140, 0.55);
+  box-shadow: 0 10px 24px rgba(31, 35, 40, 0.12);
+  transform: translateY(-2px);
 }
 
 .timeline-featured:hover img,
 .timeline-featured:focus img {
-  transform: scale(1.04);
+  height: 190px;
+  transform: scale(1.02);
 }
 
 .timeline-featured div {
@@ -388,9 +410,11 @@ h2 {
   background: #fff;
   cursor: pointer;
   transition:
+    grid-template-columns 180ms ease,
+    min-height 180ms ease,
     border-color 160ms ease,
-    transform 160ms ease,
-    box-shadow 160ms ease;
+    transform 180ms ease,
+    box-shadow 180ms ease;
 }
 
 .timeline-object.active {
@@ -400,6 +424,8 @@ h2 {
 
 .timeline-object:hover,
 .timeline-object:focus {
+  grid-template-columns: 86px minmax(0, 1fr);
+  min-height: 106px;
   border-color: rgba(31, 122, 140, 0.55);
   box-shadow: 0 8px 18px rgba(31, 35, 40, 0.1);
   transform: translateY(-1px);
@@ -411,12 +437,14 @@ h2 {
   height: 72px;
   background: #eef2f5;
   object-fit: contain;
-  transition: transform 180ms ease;
+  transition: width 180ms ease, height 180ms ease, transform 180ms ease;
 }
 
 .timeline-object:hover img,
 .timeline-object:focus img {
-  transform: scale(1.08);
+  width: 86px;
+  height: 106px;
+  transform: scale(1.02);
 }
 
 .timeline-object div {
@@ -446,46 +474,6 @@ h2 {
 
 .timeline-empty {
   margin: 12px;
-}
-
-.image-hover-preview {
-  position: fixed;
-  z-index: 1000;
-  top: 0;
-  left: 0;
-  width: 280px;
-  overflow: hidden;
-  pointer-events: none;
-  border: 1px solid rgba(31, 35, 40, 0.18);
-  border-radius: 8px;
-  background: #fff;
-  box-shadow: 0 18px 46px rgba(31, 35, 40, 0.22);
-  opacity: 0;
-  transform: translate3d(0, 0, 0) scale(0.96);
-  transition: opacity 160ms ease, transform 160ms ease;
-}
-
-.image-hover-preview.visible {
-  opacity: 1;
-}
-
-.image-hover-preview img {
-  display: block;
-  width: 100%;
-  height: 260px;
-  background: #20252b;
-  object-fit: contain;
-}
-
-.image-hover-preview span {
-  display: block;
-  overflow: hidden;
-  padding: 8px 10px;
-  color: var(--text);
-  font-size: 12px;
-  line-height: 1.35;
-  text-overflow: ellipsis;
-  white-space: nowrap;
 }
 
 .object-card {

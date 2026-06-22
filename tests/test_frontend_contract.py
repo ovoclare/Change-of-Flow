@@ -79,22 +79,25 @@ class FrontendContractTests(unittest.TestCase):
         css = self.read("prototype/styles.css")
         self.assertIn("representativeObject", app)
         self.assertIn("timelineFeaturedCard", app)
+        self.assertIn("timelineRail", app)
         self.assertIn("timeline-featured", app)
         self.assertIn("object.id !== representative.id", app)
+        self.assertLess(app.index("timelineFeaturedCard(representative)"), app.index("timelineRail(group)"))
         self.assertIn(".timeline-featured", css)
         self.assertIn(".timeline-featured img", css)
 
-    def test_timeline_hover_preview_exists(self):
+    def test_timeline_hover_expands_cards_in_layout(self):
         app = self.read("prototype/app.js")
         css = self.read("prototype/styles.css")
-        self.assertIn("imageHoverPreview", app)
-        self.assertIn("showImageHoverPreview", app)
-        self.assertIn("hideImageHoverPreview", app)
-        self.assertIn("positionImageHoverPreview", app)
-        self.assertIn("mouseenter", app)
-        self.assertIn(".image-hover-preview", css)
-        self.assertIn("pointer-events: none", css)
-        self.assertIn("transition: opacity", css)
+        self.assertNotIn("imageHoverPreview", app)
+        self.assertNotIn("showImageHoverPreview", app)
+        self.assertNotIn("positionImageHoverPreview", app)
+        self.assertNotIn(".image-hover-preview", css)
+        self.assertIn("grid-template-rows: auto auto 1fr", css)
+        self.assertIn("grid-template-columns 180ms ease", css)
+        self.assertIn("height 180ms ease", css)
+        self.assertIn(".timeline-featured:hover img", css)
+        self.assertIn(".timeline-object:hover", css)
 
 
 if __name__ == "__main__":
