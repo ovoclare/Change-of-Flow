@@ -63,7 +63,7 @@ select {
 
 .searchbar {
   display: grid;
-  grid-template-columns: minmax(180px, 1fr) 150px 120px;
+  grid-template-columns: minmax(170px, 1fr) minmax(116px, 148px) minmax(116px, 148px) 150px 120px;
   gap: 8px;
 }
 
@@ -294,6 +294,17 @@ h2 {
   transform: scale(1.06);
 }
 
+.gallery.timeline-view.timeline-at-left::before,
+.gallery.timeline-view.timeline-at-right::after {
+  opacity: 0;
+  visibility: hidden;
+}
+
+.gallery.timeline-view.timeline-dragging {
+  cursor: grabbing;
+  user-select: none;
+}
+
 .timeline-board {
   display: grid;
   grid-auto-flow: column;
@@ -318,6 +329,7 @@ h2 {
   display: grid;
   grid-template-rows: 32px auto;
   min-width: 0;
+  cursor: grab;
 }
 
 .timeline-rail::before {
@@ -357,6 +369,25 @@ h2 {
   margin: 0;
   color: var(--ink);
   font-size: 14px;
+}
+
+.timeline-era-title-button {
+  min-width: 0;
+  max-width: 100%;
+  border: 0;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: 700;
+  line-height: 1.25;
+  padding: 0 4px;
+}
+
+.timeline-era-title-button:hover,
+.timeline-era-title-button:focus {
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
 }
 
 .timeline-era-head p {
@@ -515,6 +546,23 @@ h2 {
   font-size: 11px;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.timeline-more-button {
+  min-height: 34px;
+  border: 1px dashed rgba(31, 122, 140, 0.42);
+  border-radius: 8px;
+  background: rgba(31, 122, 140, 0.06);
+  color: var(--teal);
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.timeline-more-button:hover,
+.timeline-more-button:focus {
+  border-style: solid;
+  background: rgba(31, 122, 140, 0.12);
 }
 
 .timeline-empty {

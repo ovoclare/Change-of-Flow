@@ -59,6 +59,19 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("renderTimeline", app)
         self.assertIn("buildTimelineGroups", app)
 
+    def test_searchbar_has_kiln_and_era_filters(self):
+        html = self.read("prototype/index.html")
+        app = self.read("prototype/app.js")
+        self.assertIn('id="kilnFilter"', html)
+        self.assertIn('id="eraFilter"', html)
+        self.assertIn("kilnFilter", app)
+        self.assertIn("eraFilter", app)
+        self.assertIn("renderFacetFilters", app)
+        self.assertIn("availableKilnFilters", app)
+        self.assertIn("availableEraFilters", app)
+        self.assertIn("object.kilnOrCulture !== state.kilnFilter", app)
+        self.assertIn("timelineEraLabel(object.era) !== state.eraFilter", app)
+
     def test_timeline_groups_one_kiln_by_era(self):
         app = self.read("prototype/app.js")
         self.assertIn("timelineKiln", app)
@@ -108,6 +121,21 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn(".timeline-featured", css)
         self.assertIn(".timeline-featured img", css)
 
+    def test_timeline_limits_thumbnail_stack_and_links_to_filtered_grid(self):
+        app = self.read("prototype/app.js")
+        css = self.read("prototype/styles.css")
+        self.assertIn("TIMELINE_PREVIEW_LIMIT = 3", app)
+        self.assertIn("smallObjects.slice(0, TIMELINE_PREVIEW_LIMIT)", app)
+        self.assertIn("timelineMoreButton", app)
+        self.assertIn("showKilnGrid", app)
+        self.assertIn("showEraGrid", app)
+        self.assertIn("state.viewMode = \"grid\"", app)
+        self.assertIn("state.kilnFilter = kiln", app)
+        self.assertIn("state.eraFilter = era", app)
+        self.assertIn("timeline-era-title-button", app)
+        self.assertIn(".timeline-more-button", css)
+        self.assertIn(".timeline-era-title-button", css)
+
     def test_timeline_hover_expands_cards_in_layout(self):
         app = self.read("prototype/app.js")
         css = self.read("prototype/styles.css")
@@ -138,6 +166,25 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('content: "‹"', css)
         self.assertIn('content: "›"', css)
         self.assertIn("pointer-events: none", css)
+
+    def test_timeline_drag_scroll_and_boundary_fades_exist(self):
+        app = self.read("prototype/app.js")
+        css = self.read("prototype/styles.css")
+        self.assertIn("timelineDragScroll", app)
+        self.assertIn("startTimelineDragScroll", app)
+        self.assertIn("moveTimelineDragScroll", app)
+        self.assertIn("endTimelineDragScroll", app)
+        self.assertIn("updateTimelineEdgeAvailability", app)
+        self.assertIn("event.button !== 0", app)
+        self.assertIn('els.gallery.addEventListener("mousedown"', app)
+        self.assertIn('els.gallery.addEventListener("scroll"', app)
+        self.assertIn('document.addEventListener("mousemove"', app)
+        self.assertIn('document.addEventListener("mouseup"', app)
+        self.assertIn("timeline-at-left", app)
+        self.assertIn("timeline-at-right", app)
+        self.assertIn(".gallery.timeline-view.timeline-at-left::before", css)
+        self.assertIn(".gallery.timeline-view.timeline-at-right::after", css)
+        self.assertIn("cursor: grabbing", css)
 
     def test_timeline_uses_dynasty_level_era_labels(self):
         app = self.read("prototype/app.js")

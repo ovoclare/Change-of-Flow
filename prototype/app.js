@@ -32,12 +32,19 @@ const ERA_ORDER = [
 ];
 
 const TIMELINE_ALL_KILNS = "__all__";
+const TIMELINE_PREVIEW_LIMIT = 3;
 const TIMELINE_EDGE_SCROLL_ZONE = 92;
 const TIMELINE_EDGE_SCROLL_MAX_SPEED = 18;
 
 const timelineEdgeScroll = {
   velocity: 0,
   frameId: null,
+};
+
+const timelineDragScroll = {
+  active: false,
+  startX: 0,
+  startScrollLeft: 0,
 };
 
 const state = {
@@ -50,6 +57,8 @@ const state = {
   selectedObjectId: null,
   selectedImageId: null,
   query: "",
+  kilnFilter: "all",
+  eraFilter: "all",
   nature: "all",
   status: "all",
   timelineKiln: TIMELINE_ALL_KILNS,
@@ -68,6 +77,8 @@ const els = {
   mainImage: document.querySelector("#mainImage"),
   imageStrip: document.querySelector("#imageStrip"),
   searchInput: document.querySelector("#searchInput"),
+  kilnFilter: document.querySelector("#kilnFilter"),
+  eraFilter: document.querySelector("#eraFilter"),
   natureFilter: document.querySelector("#natureFilter"),
   statusFilter: document.querySelector("#statusFilter"),
   clearFilters: document.querySelector("#clearFilters"),
@@ -116,6 +127,8 @@ function objectSearchText(object) {
 
 function matchesFilters(object) {
   if (state.selectedPhase !== "all" && object.phaseId !== state.selectedPhase) return false;
+  if (state.kilnFilter !== "all" && object.kilnOrCulture !== state.kilnFilter) return false;
+  if (state.eraFilter !== "all" && timelineEraLabel(object.era) !== state.eraFilter) return false;
   if (state.nature === "core" && !object.isCeramicSpoutCore) return false;
   if (state.nature === "predecessor" && object.isCeramicSpoutCore) return false;
   if (state.status !== "all" && object.reviewStatus !== state.status) return false;
@@ -152,6 +165,48 @@ function phaseCounts() {
     counts.set(object.phaseId, (counts.get(object.phaseId) ?? 0) + 1);
   }
   return counts;
+}
+
+function availableKilnFilters() {
+  const counts = new Map();
+  for (const object of state.objects) {
+    const kiln = object.kilnOrCulture || "待判断";
+    counts.set(kiln, (counts.get(kiln) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: value, count }))
+    .sort((a, b) => {
+      if (a.label === "待判断") return 1;
+      if (b.label === "待判断") return -1;
+      return b.count - a.count || a.label.localeCompare(b.label, "zh-Hans-CN");
+    });
+}
+
+function availableEraFilters() {
+  const counts = new Map();
+  for (const object of state.objects) {
+    const era = timelineEraLabel(object.era);
+    counts.set(era, (counts.get(era) ?? 0) + 1);
+  }
+  return [...counts.entries()]
+    .map(([value, count]) => ({ value, label: value, count }))
+    .sort((a, b) => eraRank(a.value) - eraRank(b.value) || b.count - a.count || a.label.localeCompare(b.label, "zh-Hans-CN"));
+}
+
+function renderFacetFilters() {
+  renderFilterSelect(els.kilnFilter, [{ value: "all", label: "全部窑口", count: state.objects.length }, ...availableKilnFilters()], state.kilnFilter);
+  renderFilterSelect(els.eraFilter, [{ value: "all", label: "全部朝代", count: state.objects.length }, ...availableEraFilters()], state.eraFilter);
+}
+
+function renderFilterSelect(select, options, selectedValue) {
+  const optionNodes = options.map((item) => {
+    const option = document.createElement("option");
+    option.value = item.value;
+    option.textContent = `${item.label}（${item.count}）`;
+    option.selected = item.value === selectedValue;
+    return option;
+  });
+  select.replaceChildren(...optionNodes);
 }
 
 function availableTimelineKilns() {
@@ -423,6 +478,7 @@ function renderTimeline() {
   const columns = groups.map((group) => timelineEraColumn(group));
   board.replaceChildren(...columns);
   els.gallery.replaceChildren(board);
+  requestAnimationFrame(updateTimelineEdgeAvailability);
 }
 
 function timelineEraColumn(group) {
@@ -436,8 +492,11 @@ function timelineEraColumn(group) {
   const stack = document.createElement("div");
   stack.className = "timeline-stack";
   const smallObjects = representative ? group.objects.filter((object) => object.id !== representative.id) : group.objects;
-  const cards = smallObjects.map((object) => timelineObjectCard(object));
+  const cards = smallObjects.slice(0, TIMELINE_PREVIEW_LIMIT).map((object) => timelineObjectCard(object));
   stack.replaceChildren(...cards);
+  const kiln = selectedTimelineAllKilns() ? representative?.kilnOrCulture ?? group.objects[0]?.kilnOrCulture ?? "" : state.timelineKiln;
+  const kilnCount = kiln ? state.objects.filter((object) => (object.kilnOrCulture || "待判断") === kiln).length : group.objects.length;
+  stack.append(timelineMoreButton(kiln, kilnCount));
   column.append(stack);
   return column;
 }
@@ -448,10 +507,11 @@ function timelineRail(group) {
   rail.innerHTML = `
     <div class="timeline-marker" aria-hidden="true"><span></span></div>
     <header class="timeline-era-head">
-      <h2>${escapeHtml(group.era)}</h2>
+      <h2><button class="timeline-era-title-button" type="button">${escapeHtml(group.era)}</button></h2>
       <p>${group.objects.length} 件</p>
     </header>
   `;
+  rail.querySelector(".timeline-era-title-button")?.addEventListener("click", () => showEraGrid(group.era));
   return rail;
 }
 
@@ -499,6 +559,15 @@ function timelineObjectCard(object) {
   return card;
 }
 
+function timelineMoreButton(kiln, count) {
+  const button = document.createElement("button");
+  button.type = "button";
+  button.className = "timeline-more-button";
+  button.textContent = kiln ? `查看${kiln}全部（${count}）` : `查看全部（${count}）`;
+  button.addEventListener("click", () => showKilnGrid(kiln));
+  return button;
+}
+
 function bindTimelineCard(card, object) {
   card.addEventListener("click", () => selectObject(object.id));
   card.addEventListener("keydown", (event) => {
@@ -512,9 +581,14 @@ function bindTimelineCard(card, object) {
 function setupTimelineEdgeScroll() {
   els.gallery.addEventListener("mousemove", updateTimelineEdgeScroll);
   els.gallery.addEventListener("mouseleave", stopTimelineEdgeScroll);
+  els.gallery.addEventListener("mousedown", startTimelineDragScroll);
+  els.gallery.addEventListener("scroll", updateTimelineEdgeAvailability);
+  document.addEventListener("mousemove", moveTimelineDragScroll);
+  document.addEventListener("mouseup", endTimelineDragScroll);
 }
 
 function updateTimelineEdgeScroll(event) {
+  if (timelineDragScroll.active) return;
   if (state.viewMode !== "timeline" || !els.gallery.classList.contains("timeline-view")) {
     stopTimelineEdgeScroll();
     return;
@@ -523,6 +597,7 @@ function updateTimelineEdgeScroll(event) {
   const maxScroll = els.gallery.scrollWidth - els.gallery.clientWidth;
   if (maxScroll <= 0) {
     stopTimelineEdgeScroll();
+    updateTimelineEdgeAvailability();
     return;
   }
 
@@ -557,6 +632,7 @@ function stepTimelineEdgeScroll() {
   const maxScroll = els.gallery.scrollWidth - els.gallery.clientWidth;
   const nextScrollLeft = Math.max(0, Math.min(maxScroll, els.gallery.scrollLeft + timelineEdgeScroll.velocity));
   els.gallery.scrollLeft = nextScrollLeft;
+  updateTimelineEdgeAvailability();
 
   if ((nextScrollLeft === 0 && timelineEdgeScroll.velocity < 0) || (nextScrollLeft === maxScroll && timelineEdgeScroll.velocity > 0)) {
     timelineEdgeScroll.velocity = 0;
@@ -566,6 +642,43 @@ function stepTimelineEdgeScroll() {
   timelineEdgeScroll.frameId = timelineEdgeScroll.velocity === 0 ? null : requestAnimationFrame(stepTimelineEdgeScroll);
 }
 
+function updateTimelineEdgeAvailability() {
+  if (!els.gallery.classList.contains("timeline-view")) {
+    els.gallery.classList.remove("timeline-at-left", "timeline-at-right");
+    return;
+  }
+  const maxScroll = Math.max(0, els.gallery.scrollWidth - els.gallery.clientWidth);
+  const atLeft = els.gallery.scrollLeft <= 1;
+  const atRight = maxScroll <= 1 || els.gallery.scrollLeft >= maxScroll - 1;
+  els.gallery.classList.toggle("timeline-at-left", atLeft);
+  els.gallery.classList.toggle("timeline-at-right", atRight);
+}
+
+function startTimelineDragScroll(event) {
+  if (event.button !== 0 || state.viewMode !== "timeline") return;
+  if (!event.target.closest(".timeline-rail")) return;
+  timelineDragScroll.active = true;
+  timelineDragScroll.startX = event.clientX;
+  timelineDragScroll.startScrollLeft = els.gallery.scrollLeft;
+  stopTimelineEdgeScroll();
+  els.gallery.classList.add("timeline-dragging");
+  event.preventDefault();
+}
+
+function moveTimelineDragScroll(event) {
+  if (!timelineDragScroll.active) return;
+  const deltaX = event.clientX - timelineDragScroll.startX;
+  els.gallery.scrollLeft = timelineDragScroll.startScrollLeft - deltaX;
+  updateTimelineEdgeAvailability();
+}
+
+function endTimelineDragScroll() {
+  if (!timelineDragScroll.active) return;
+  timelineDragScroll.active = false;
+  els.gallery.classList.remove("timeline-dragging");
+  updateTimelineEdgeAvailability();
+}
+
 function stopTimelineEdgeScroll() {
   timelineEdgeScroll.velocity = 0;
   if (timelineEdgeScroll.frameId !== null) {
@@ -573,6 +686,33 @@ function stopTimelineEdgeScroll() {
     timelineEdgeScroll.frameId = null;
   }
   els.gallery.classList.remove("timeline-edge-left-active", "timeline-edge-right-active");
+}
+
+function resetObjectFilters() {
+  state.selectedPhase = "all";
+  state.query = "";
+  state.kilnFilter = "all";
+  state.eraFilter = "all";
+  state.nature = "all";
+  state.status = "all";
+  state.timelineKiln = TIMELINE_ALL_KILNS;
+  els.searchInput.value = "";
+  els.natureFilter.value = "all";
+  els.statusFilter.value = "all";
+}
+
+function showKilnGrid(kiln) {
+  resetObjectFilters();
+  state.viewMode = "grid";
+  state.kilnFilter = kiln || "all";
+  applyFilters();
+}
+
+function showEraGrid(era) {
+  resetObjectFilters();
+  state.viewMode = "grid";
+  state.eraFilter = era || "all";
+  applyFilters();
 }
 
 function selectObject(objectId) {
@@ -781,6 +921,7 @@ function moveSelection(offset) {
 }
 
 function render() {
+  renderFacetFilters();
   renderPhases();
   renderStats();
   renderMergeSummary();
@@ -825,6 +966,14 @@ function bindEvents() {
     state.query = event.target.value.trim();
     applyFilters();
   });
+  els.kilnFilter.addEventListener("change", (event) => {
+    state.kilnFilter = event.target.value;
+    applyFilters();
+  });
+  els.eraFilter.addEventListener("change", (event) => {
+    state.eraFilter = event.target.value;
+    applyFilters();
+  });
   els.natureFilter.addEventListener("change", (event) => {
     state.nature = event.target.value;
     applyFilters();
@@ -847,14 +996,7 @@ function bindEvents() {
     applyFilters();
   });
   els.clearFilters.addEventListener("click", () => {
-    state.selectedPhase = "all";
-    state.timelineKiln = TIMELINE_ALL_KILNS;
-    state.query = "";
-    state.nature = "all";
-    state.status = "all";
-    els.searchInput.value = "";
-    els.natureFilter.value = "all";
-    els.statusFilter.value = "all";
+    resetObjectFilters();
     applyFilters();
   });
   els.prevObject.addEventListener("click", () => moveSelection(-1));
