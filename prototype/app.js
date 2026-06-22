@@ -9,6 +9,7 @@ const state = {
   query: "",
   nature: "all",
   status: "all",
+  reviewSaveMessage: "",
 };
 
 const els = {
@@ -185,6 +186,7 @@ function renderGallery() {
 function selectObject(objectId) {
   state.selectedObjectId = objectId;
   state.selectedImageId = null;
+  state.reviewSaveMessage = "";
   preserveGalleryScroll(() => render());
 }
 
@@ -221,6 +223,23 @@ function renderDetail() {
     <span>${escapeHtml(object.phaseLabel)} · ${escapeHtml(object.era)} · ${escapeHtml(object.kilnOrCulture)}</span>
   `;
   els.detailContent.innerHTML = `
+    <form id="reviewForm" class="review-form">
+      <label>
+        <span>审阅状态</span>
+        <select id="reviewStatusSelect">
+          ${reviewStatusOptions(object.reviewStatus)}
+        </select>
+      </label>
+      <label>
+        <span>备注</span>
+        <textarea id="notesField" rows="4" placeholder="例如：可入第二章、需补来源、待确认是否同器物">${escapeHtml(object.notes)}</textarea>
+      </label>
+      <div class="review-actions">
+        <button id="saveReview" type="submit">保存审阅</button>
+        <button id="clearNotes" class="secondary" type="button">清空备注</button>
+        <span id="reviewSaveState" aria-live="polite">${escapeHtml(state.reviewSaveMessage)}</span>
+      </div>
+    </form>
     <dl class="meta-grid">
       <dt>论文分期</dt><dd>${escapeHtml(object.phaseLabel)}</dd>
       <dt>时代</dt><dd>${escapeHtml(object.era)}</dd>
@@ -236,7 +255,100 @@ function renderDetail() {
     </dl>
     <div class="path-line">${escapeHtml(image.path)}</div>
   `;
+  bindReviewForm(object);
   renderImageStrip(object, image.id);
+}
+
+function reviewStatusOptions(currentStatus) {
+  return ["待审阅", "已审阅", "待确认", "需补来源", "已入论文"]
+    .map((status) => `<option value="${escapeHtml(status)}" ${status === currentStatus ? "selected" : ""}>${escapeHtml(status)}</option>`)
+    .join("");
+}
+
+function bindReviewForm(object) {
+  const form = document.querySelector("#reviewForm");
+  const saveState = document.querySelector("#reviewSaveState");
+  const clearNotes = document.querySelector("#clearNotes");
+  clearNotes?.addEventListener("click", () => {
+    const notesField = document.querySelector("#notesField");
+    if (notesField) {
+      notesField.value = "";
+      notesField.focus();
+    }
+    state.reviewSaveMessage = "";
+    showReviewSaveMessage();
+  });
+  form?.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    const reviewStatusSelect = document.querySelector("#reviewStatusSelect");
+    const notesField = document.querySelector("#notesField");
+    const saveReview = document.querySelector("#saveReview");
+    saveReview.disabled = true;
+    saveState.textContent = "保存中";
+    try {
+      const updated = await saveObjectReview(object.id, {
+        reviewStatus: reviewStatusSelect.value,
+        notes: notesField.value,
+      });
+      const mergedObject = mergeUpdatedObject(updated);
+      state.reviewSaveMessage = "已保存";
+      preserveGalleryScroll(() => applyFilters());
+      syncReviewFields(mergedObject);
+      showReviewSaveMessage();
+    } catch (error) {
+      state.reviewSaveMessage = `保存失败：${error.message}`;
+      showReviewSaveMessage();
+    } finally {
+      const currentSaveReview = document.querySelector("#saveReview");
+      if (currentSaveReview) {
+        currentSaveReview.disabled = false;
+      }
+    }
+  });
+}
+
+function mergeUpdatedObject(updated) {
+  const index = state.objects.findIndex((object) => object.id === updated.id);
+  if (index === -1) return updated;
+  const merged = { ...state.objects[index], ...updated };
+  state.objects[index] = merged;
+  const catalogIndex = state.catalog?.objects?.findIndex((object) => object.id === updated.id) ?? -1;
+  if (catalogIndex !== -1) {
+    state.catalog.objects[catalogIndex] = merged;
+  }
+  return merged;
+}
+
+function syncReviewFields(object) {
+  if (selectedObject()?.id !== object.id) return;
+  const reviewStatusSelect = document.querySelector("#reviewStatusSelect");
+  const notesField = document.querySelector("#notesField");
+  if (reviewStatusSelect) {
+    reviewStatusSelect.value = object.reviewStatus ?? "";
+  }
+  if (notesField) {
+    notesField.value = object.notes ?? "";
+  }
+}
+
+function showReviewSaveMessage() {
+  const saveState = document.querySelector("#reviewSaveState");
+  if (saveState) {
+    saveState.textContent = state.reviewSaveMessage;
+  }
+}
+
+async function saveObjectReview(objectId, payload) {
+  const response = await fetch(`/api/object/${encodeURIComponent(objectId)}`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  const data = await response.json();
+  if (!response.ok || !data.ok) {
+    throw new Error(data.error || `HTTP ${response.status}`);
+  }
+  return data.object;
 }
 
 function renderImageStrip(object, activeImageId) {
@@ -267,6 +379,7 @@ function moveSelection(offset) {
   const nextIndex = (currentIndex + offset + state.filteredObjects.length) % state.filteredObjects.length;
   state.selectedObjectId = state.filteredObjects[nextIndex].id;
   state.selectedImageId = null;
+  state.reviewSaveMessage = "";
   preserveGalleryScroll(() => render());
 }
 

@@ -11,6 +11,7 @@ from urllib.parse import unquote, urlparse
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = PROJECT_ROOT / "data" / "catalog.json"
+ALLOWED_REVIEW_STATUSES = {"待审阅", "已审阅", "待确认", "需补来源", "已入论文"}
 
 
 class HuliumRequestHandler(BaseHTTPRequestHandler):
@@ -35,6 +36,40 @@ class HuliumRequestHandler(BaseHTTPRequestHandler):
             self.serve_file(safe_child(PROJECT_ROOT, request_path.lstrip("/")))
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def do_POST(self) -> None:
+        parsed = urlparse(self.path)
+        request_path = unquote(parsed.path)
+        if request_path.startswith("/api/object/"):
+            self.update_object(request_path.removeprefix("/api/object/"))
+            return
+        self.send_error(HTTPStatus.NOT_FOUND, "Not found")
+
+    def update_object(self, object_id: str) -> None:
+        try:
+            length = int(self.headers.get("Content-Length", "0"))
+        except ValueError:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid content length")
+            return
+        if length <= 0 or length > 65536:
+            self.send_error(HTTPStatus.BAD_REQUEST, "Invalid request body")
+            return
+        try:
+            payload = json.loads(self.rfile.read(length).decode("utf-8"))
+            catalog = load_catalog()
+            updated = update_object_metadata(catalog, object_id, payload)
+        except ValueError as error:
+            self.send_json({"ok": False, "error": str(error)}, status=HTTPStatus.BAD_REQUEST)
+            return
+        except json.JSONDecodeError:
+            self.send_json({"ok": False, "error": "Invalid JSON"}, status=HTTPStatus.BAD_REQUEST)
+            return
+        if not updated:
+            self.send_json({"ok": False, "error": "Object not found"}, status=HTTPStatus.NOT_FOUND)
+            return
+        save_catalog(catalog)
+        obj = next(item for item in catalog["objects"] if item["id"] == object_id)
+        self.send_json({"ok": True, "object": obj})
 
     def serve_image(self, image_id: str) -> None:
         catalog = load_catalog()
@@ -69,6 +104,15 @@ class HuliumRequestHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def send_json(self, data: dict, status: HTTPStatus = HTTPStatus.OK) -> None:
+        body = json.dumps(data, ensure_ascii=False).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(body)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(body)
+
     def log_message(self, format: str, *args: object) -> None:
         print(f"{self.address_string()} - {format % args}")
 
@@ -91,6 +135,26 @@ def is_relative_to(path: Path, root: Path) -> bool:
 
 def load_catalog() -> dict:
     return json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
+
+
+def save_catalog(catalog: dict) -> None:
+    CATALOG_PATH.write_text(json.dumps(catalog, ensure_ascii=False, indent=2), encoding="utf-8")
+
+
+def update_object_metadata(catalog: dict, object_id: str, payload: dict) -> bool:
+    review_status = payload.get("reviewStatus")
+    notes = payload.get("notes")
+    if review_status is not None and review_status not in ALLOWED_REVIEW_STATUSES:
+        raise ValueError("Unknown review status")
+    for obj in catalog.get("objects", []):
+        if obj.get("id") != object_id:
+            continue
+        if review_status is not None:
+            obj["reviewStatus"] = review_status
+        if notes is not None:
+            obj["notes"] = str(notes)
+        return True
+    return False
 
 
 def check_catalog() -> int:

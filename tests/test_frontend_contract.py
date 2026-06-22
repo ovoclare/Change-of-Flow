@@ -26,10 +26,28 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn('id="detailHeader"', html)
         self.assertLess(html.index('id="detailHeader"'), html.index('class="image-stage"'))
 
-    def test_card_title_has_three_line_room(self):
+    def test_review_form_appears_before_metadata(self):
+        app = self.read("prototype/app.js")
+        self.assertLess(app.index('id="reviewForm"'), app.index('class="meta-grid"'))
+
+    def test_card_title_has_two_line_room(self):
         css = self.read("prototype/styles.css")
-        self.assertIn("-webkit-line-clamp: 3", css)
-        self.assertIn("grid-auto-rows: 292px", css)
+        self.assertIn("-webkit-line-clamp: 2", css)
+        self.assertIn("grid-auto-rows: 274px", css)
+
+    def test_main_image_stays_inside_image_stage(self):
+        css = self.read("prototype/styles.css")
+        self.assertIn(".image-stage {\n  position: relative;\n  display: grid;\n  place-items: center;\n  min-height: 0;\n  overflow: hidden;", css)
+        self.assertIn("max-height: 100%", css)
+
+    def test_detail_has_editable_review_controls(self):
+        app = self.read("prototype/app.js")
+        self.assertIn("reviewStatusSelect", app)
+        self.assertIn("notesField", app)
+        self.assertIn("clearNotes", app)
+        self.assertIn("saveReview", app)
+        self.assertIn("saveObjectReview", app)
+        self.assertIn("showReviewSaveMessage", app)
 
 
 if __name__ == "__main__":
