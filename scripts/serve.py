@@ -3,19 +3,27 @@ from __future__ import annotations
 import argparse
 import json
 import mimetypes
+import os
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import unquote, urlparse
 
+try:  # Works both in tests (package import) and when run as python scripts/serve.py.
+    from scripts.catalog_builder import IMAGE_EXTENSIONS, build_catalog, load_json, write_json
+except ImportError:  # pragma: no cover - exercised by direct script execution.
+    from catalog_builder import IMAGE_EXTENSIONS, build_catalog, load_json, write_json
+
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = PROJECT_ROOT / "data" / "catalog.json"
+PENDING_PATH = PROJECT_ROOT / "data" / "pending-merge.json"
 ALLOWED_REVIEW_STATUSES = {"待审阅", "已审阅", "待确认", "需补来源", "已入论文"}
+SOURCE_ENV_NAME = "HULIUM_SOURCE_ROOT"
 
 
 class HuliumRequestHandler(BaseHTTPRequestHandler):
-    server_version = "HuliumGallery/0.1"
+    server_version = "HuliumGallery/0.2"
 
     def do_GET(self) -> None:
         parsed = urlparse(self.path)
@@ -29,11 +37,11 @@ class HuliumRequestHandler(BaseHTTPRequestHandler):
         if request_path.startswith("/image/"):
             self.serve_image(request_path.removeprefix("/image/"))
             return
-        if request_path.startswith("/prototype/"):
-            self.serve_file(safe_child(PROJECT_ROOT, request_path.lstrip("/")))
-            return
-        if request_path.startswith("/data/"):
-            self.serve_file(safe_child(PROJECT_ROOT, request_path.lstrip("/")))
+        if request_path.startswith("/prototype/") or request_path.startswith("/data/"):
+            try:
+                self.serve_file(safe_child(PROJECT_ROOT, request_path.lstrip("/")))
+            except ValueError:
+                self.send_error(HTTPStatus.FORBIDDEN, "Path outside project root")
             return
         self.send_error(HTTPStatus.NOT_FOUND, "Not found")
 
@@ -80,10 +88,9 @@ class HuliumRequestHandler(BaseHTTPRequestHandler):
         if image.get("fileStatus") != "normal":
             self.send_error(HTTPStatus.NOT_FOUND, "Image is not available")
             return
-        source_root = Path(catalog["sourceRoot"]).resolve()
-        image_path = Path(image["path"]).resolve()
-        if not is_relative_to(image_path, source_root):
-            self.send_error(HTTPStatus.FORBIDDEN, "Image outside source root")
+        image_path = resolve_image_path(image, catalog)
+        if not image_path:
+            self.send_error(HTTPStatus.NOT_FOUND, "Image file not found; restart the server to rebuild the catalog")
             return
         self.serve_file(image_path)
 
@@ -157,6 +164,165 @@ def update_object_metadata(catalog: dict, object_id: str, payload: dict) -> bool
     return False
 
 
+def ensure_catalog_current(explicit_source: str | Path | None = None, *, force: bool = False) -> bool:
+    source_root = find_source_root(explicit_source)
+    if not source_root:
+        if force or not CATALOG_PATH.exists():
+            print(
+                "未找到 codex整理 图库目录。请把 codex整理 放在“壶流图库程序”的同级目录，"
+                f"或启动时加 --source，或设置环境变量 {SOURCE_ENV_NAME}。"
+            )
+        return False
+
+    existing = load_json(CATALOG_PATH) or {}
+    catalog = build_catalog(source_root, existing_catalog=existing)
+    write_json(CATALOG_PATH, catalog)
+    write_json(PENDING_PATH, catalog["pendingMergeGroups"])
+    print(
+        "catalog rebuilt: "
+        f"source={source_root} objects={catalog['stats']['objectCount']} "
+        f"images={catalog['stats']['imageCount']} pending={catalog['stats']['pendingMergeCount']} "
+        f"missing={catalog['stats']['missingImageCount']}"
+    )
+    return True
+
+
+def find_source_root(explicit_source: str | Path | None = None) -> Path | None:
+    """Find the image library even when the program folder is nested after unzipping.
+
+    Normal layout::
+        1形制图谱/壶流图库程序
+        1形制图谱/codex整理
+
+    Common unzip mistake::
+        1形制图谱/壶流图库程序/壶流图库程序
+        1形制图谱/codex整理
+
+    The search therefore checks the program folder, its parent, and a few
+    ancestors for a sibling/child named codex整理 before falling back to any
+    sourceRoot stored in catalog.json.
+    """
+    seen: set[Path] = set()
+    candidates: list[Path] = []
+
+    def add(candidate: str | Path | None, *, relative_to_project: bool = True) -> None:
+        if not candidate:
+            return
+        path = Path(candidate).expanduser()
+        if not path.is_absolute():
+            base = PROJECT_ROOT if relative_to_project else Path.cwd()
+            path = (base / path).resolve()
+        else:
+            path = path.resolve()
+        if path not in seen:
+            seen.add(path)
+            candidates.append(path)
+
+    add(explicit_source)
+    add(os.environ.get(SOURCE_ENV_NAME))
+
+    project = PROJECT_ROOT.resolve()
+    # Check the project folder itself, then parent/grandparent/great-grandparent.
+    # This covers both the intended sibling layout and the accidental nested layout.
+    anchors = [project, *list(project.parents)[:4]]
+    for anchor in anchors:
+        add(anchor / "codex整理")
+
+    catalog = load_json(CATALOG_PATH) or {}
+    add(catalog.get("sourceRoot"))
+
+    # Finally, search shallowly around nearby folders without walking the whole drive.
+    for base in anchors[:3]:
+        for candidate in iter_named_dirs(base, "codex整理", max_depth=2):
+            add(candidate)
+
+    for candidate in candidates:
+        if candidate.exists() and candidate.is_dir() and has_images(candidate):
+            return candidate
+    return None
+
+
+def iter_named_dirs(base: Path, name: str, max_depth: int) -> list[Path]:
+    if not base.exists() or not base.is_dir():
+        return []
+    found: list[Path] = []
+    stack: list[tuple[Path, int]] = [(base.resolve(), 0)]
+    visited: set[Path] = set()
+    while stack:
+        current, depth = stack.pop()
+        if current in visited or depth > max_depth:
+            continue
+        visited.add(current)
+        try:
+            children = list(current.iterdir())
+        except OSError:
+            continue
+        for child in children:
+            if not child.is_dir():
+                continue
+            if child.name == name:
+                found.append(child.resolve())
+            if depth < max_depth and not child.name.startswith(".") and child.name not in {"__pycache__", "node_modules"}:
+                stack.append((child.resolve(), depth + 1))
+    return found
+
+
+def has_images(root: Path) -> bool:
+    try:
+        return any(path.is_file() and path.suffix.lower() in IMAGE_EXTENSIONS for path in root.rglob("*"))
+    except OSError:
+        return False
+
+
+def resolve_source_root(catalog: dict) -> Path | None:
+    raw = catalog.get("sourceRoot")
+    if raw:
+        root = Path(raw)
+        if not root.is_absolute():
+            root = PROJECT_ROOT / root
+        root = root.resolve()
+        if root.exists() and root.is_dir():
+            return root
+    return find_source_root()
+
+
+def resolve_image_path(image: dict, catalog: dict) -> Path | None:
+    source_root = resolve_source_root(catalog)
+    candidates: list[Path] = []
+
+    raw_path = image.get("path")
+    if raw_path:
+        image_path = Path(raw_path)
+        if not image_path.is_absolute():
+            if source_root:
+                candidates.append(source_root / image_path)
+            candidates.append(PROJECT_ROOT / image_path)
+        else:
+            candidates.append(image_path)
+
+    relative_path = image.get("relativePath")
+    if source_root and relative_path:
+        candidates.append(source_root / relative_path)
+
+    for candidate in candidates:
+        try:
+            resolved = candidate.resolve()
+        except OSError:
+            continue
+        if not resolved.exists() or not resolved.is_file():
+            continue
+        if source_root and not is_relative_to(resolved, source_root.resolve()):
+            continue
+        return resolved
+
+    file_name = image.get("fileName")
+    if source_root and file_name:
+        for candidate in source_root.rglob(file_name):
+            if candidate.is_file():
+                return candidate.resolve()
+    return None
+
+
 def check_catalog() -> int:
     if not CATALOG_PATH.exists():
         print(f"catalog missing: {CATALOG_PATH}")
@@ -169,14 +335,14 @@ def check_catalog() -> int:
     if not normal_images:
         print("catalog has no normal images")
         return 1
-    first_path = Path(normal_images[0]["path"])
-    if not first_path.exists():
-        print(f"first image missing: {first_path}")
+    first_path = resolve_image_path(normal_images[0], catalog)
+    if not first_path:
+        print(f"first image missing: {normal_images[0].get('fileName')}")
         return 1
     print(
         "server check ok: "
         f"objects={len(catalog['objects'])} images={len(catalog['images'])} "
-        f"firstImage={normal_images[0]['id']}"
+        f"firstImage={normal_images[0]['id']} path={first_path}"
     )
     return 0
 
@@ -185,8 +351,13 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Serve the local Hulium thesis gallery prototype.")
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--port", type=int, default=8877)
+    parser.add_argument("--source", help="图库根目录；不填时自动寻找同级 codex整理。")
+    parser.add_argument("--no-auto-rebuild", action="store_true", help="启动时不自动重建 catalog.json。")
     parser.add_argument("--check", action="store_true", help="Check catalog and exit without starting the server.")
     args = parser.parse_args()
+
+    if not args.no_auto_rebuild:
+        ensure_catalog_current(args.source, force=args.check)
 
     if args.check:
         return check_catalog()

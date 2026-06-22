@@ -1,35 +1,44 @@
 const ERA_ORDER = [
-  "河姆渡文化",
-  "大汶口文化",
-  "良渚文化",
-  "龙山文化",
-  "二里头文化",
+  "新石器时代",
+  "夏",
+  "夏—商—周",
   "商",
-  "商早期",
-  "商周",
+  "商—周",
   "西周",
+  "东周",
+  "春秋",
   "战国",
+  "战国—汉",
+  "秦",
   "汉",
-  "东晋",
+  "三国",
   "魏晋南北朝",
-  "南朝",
+  "隋",
   "唐",
-  "北宋",
-  "南宋",
-  "宋元",
-  "明洪武",
-  "明永乐",
-  "明宣德",
-  "明嘉靖",
-  "明隆庆",
-  "明万历",
+  "五代",
+  "五代—宋",
+  "辽",
+  "宋",
+  "金",
+  "宋—元",
+  "元",
+  "元—明",
   "明",
-  "明晚期",
-  "清康熙",
-  "清乾隆",
-  "晚清",
+  "清",
+  "清—民国",
+  "民国",
+  "现代",
   "待判断",
 ];
+
+const TIMELINE_ALL_KILNS = "__all__";
+const TIMELINE_EDGE_SCROLL_ZONE = 92;
+const TIMELINE_EDGE_SCROLL_MAX_SPEED = 18;
+
+const timelineEdgeScroll = {
+  velocity: 0,
+  frameId: null,
+};
 
 const state = {
   catalog: null,
@@ -43,7 +52,7 @@ const state = {
   query: "",
   nature: "all",
   status: "all",
-  timelineKiln: "",
+  timelineKiln: TIMELINE_ALL_KILNS,
   reviewSaveMessage: "",
 };
 
@@ -114,17 +123,21 @@ function matchesFilters(object) {
   return true;
 }
 
+function selectedTimelineAllKilns() {
+  return !state.timelineKiln || state.timelineKiln === TIMELINE_ALL_KILNS;
+}
+
 function matchesTimelineFilters(object) {
-  if (state.timelineKiln && object.kilnOrCulture !== state.timelineKiln) return false;
-  if (state.nature === "core" && !object.isCeramicSpoutCore) return false;
-  if (state.nature === "predecessor" && object.isCeramicSpoutCore) return false;
-  if (state.status !== "all" && object.reviewStatus !== state.status) return false;
-  if (state.query && !objectSearchText(object).includes(state.query.toLowerCase())) return false;
+  if (!matchesFilters(object)) return false;
+  if (!selectedTimelineAllKilns() && object.kilnOrCulture !== state.timelineKiln) return false;
   return true;
 }
 
 function applyFilters() {
   state.filteredObjects = state.objects.filter(matchesFilters);
+  if (state.viewMode === "timeline") {
+    ensureTimelineKilnSelection();
+  }
   const selectionPool = state.viewMode === "timeline" ? timelineObjects() : state.filteredObjects;
   if (!selectionPool.some((object) => object.id === state.selectedObjectId)) {
     state.selectedObjectId = selectionPool[0]?.id ?? null;
@@ -142,33 +155,91 @@ function phaseCounts() {
 }
 
 function availableTimelineKilns() {
+  const baseObjects = state.objects.filter(matchesFilters);
+  const allEras = new Set(baseObjects.map((object) => timelineEraLabel(object.era)));
   const kilnMap = new Map();
-  for (const object of state.objects) {
+  for (const object of baseObjects) {
     const kiln = object.kilnOrCulture || "待判断";
     if (!kilnMap.has(kiln)) {
-      kilnMap.set(kiln, { label: kiln, count: 0, eras: new Set() });
+      kilnMap.set(kiln, { value: kiln, label: kiln, count: 0, eras: new Set() });
     }
     const item = kilnMap.get(kiln);
     item.count += 1;
-    item.eras.add(object.era || "待判断");
+    item.eras.add(timelineEraLabel(object.era));
   }
-  return [...kilnMap.values()]
-    .map((item) => ({ label: item.label, count: item.count, eraCount: item.eras.size }))
+  const kilnOptions = [...kilnMap.values()]
+    .map((item) => ({ value: item.value, label: item.label, count: item.count, eraCount: item.eras.size }))
     .sort((a, b) => {
       if (a.label === "待判断") return 1;
       if (b.label === "待判断") return -1;
       return b.eraCount - a.eraCount || b.count - a.count || a.label.localeCompare(b.label, "zh-Hans-CN");
     });
+  return [
+    { value: TIMELINE_ALL_KILNS, label: "全部", count: baseObjects.length, eraCount: allEras.size },
+    ...kilnOptions,
+  ];
+}
+
+function ensureTimelineKilnSelection() {
+  const kilnOptions = availableTimelineKilns();
+  const optionValues = new Set(kilnOptions.map((item) => item.value));
+  if (!optionValues.has(state.timelineKiln)) {
+    state.timelineKiln = TIMELINE_ALL_KILNS;
+  }
+  return kilnOptions;
 }
 
 function timelineObjects() {
   return state.objects.filter(matchesTimelineFilters);
 }
 
+function timelineEraLabel(rawEra) {
+  const era = String(rawEra || "待判断").trim();
+  const compact = era.replace(/\s+/g, "");
+  if (!compact || ["待判断", "待考证", "未知"].includes(compact)) return "待判断";
+
+  const rangeRules = [
+    [/夏商周/, "夏—商—周"],
+    [/商周/, "商—周"],
+    [/战国汉代|战国至汉/, "战国—汉"],
+    [/五代北宋|五代至宋/, "五代—宋"],
+    [/宋元|宋至元/, "宋—元"],
+    [/元至明|元明/, "元—明"],
+    [/清宣统民国|清末民国|清至民国/, "清—民国"],
+  ];
+  for (const [pattern, label] of rangeRules) {
+    if (pattern.test(compact)) return label;
+  }
+
+  if (/新石器|河姆渡|良渚|大汶口|龙山|齐家/.test(compact)) return "新石器时代";
+  if (/二里头|夏/.test(compact)) return "夏";
+  if (/商/.test(compact)) return "商";
+  if (/西周/.test(compact)) return "西周";
+  if (/东周/.test(compact)) return "东周";
+  if (/春秋/.test(compact)) return "春秋";
+  if (/战国/.test(compact)) return "战国";
+  if (/秦/.test(compact)) return "秦";
+  if (/汉/.test(compact)) return "汉";
+  if (/三国/.test(compact)) return "三国";
+  if (/魏晋南北朝|魏晋|南北朝|东晋|西晋|南朝|北朝/.test(compact)) return "魏晋南北朝";
+  if (/隋/.test(compact)) return "隋";
+  if (/唐/.test(compact)) return "唐";
+  if (/五代/.test(compact)) return "五代";
+  if (/北宋|南宋|宋代|宋/.test(compact)) return "宋";
+  if (/辽代|辽/.test(compact)) return "辽";
+  if (/金代|金/.test(compact)) return "金";
+  if (/元代|元/.test(compact)) return "元";
+  if (/明初|明中期|明晚期|明代|明|洪武|永乐|宣德|嘉靖|隆庆|万历/.test(compact)) return "明";
+  if (/清代|清|康熙|雍正|乾隆|嘉庆|道光|光绪|宣统|晚清|清末|十八世纪|十九世纪/.test(compact)) return "清";
+  if (/民国/.test(compact)) return "民国";
+  if (/现代|当代/.test(compact)) return "现代";
+  return era;
+}
+
 function buildTimelineGroups(objects) {
   const groups = new Map();
   for (const object of objects) {
-    const era = object.era || "待判断";
+    const era = timelineEraLabel(object.era);
     if (!groups.has(era)) {
       groups.set(era, []);
     }
@@ -202,11 +273,15 @@ function phaseButton(phase, count) {
   button.type = "button";
   button.className = `phase-button ${state.selectedPhase === phase.id ? "active" : ""}`;
   button.innerHTML = `<strong>${escapeHtml(phase.label)}</strong><span>${count} 件器物</span>`;
-  button.addEventListener("click", () => {
-    state.selectedPhase = phase.id;
-    applyFilters();
-  });
+  button.addEventListener("click", () => selectPhase(phase.id));
   return button;
+}
+
+function selectPhase(phaseId) {
+  state.selectedPhase = phaseId;
+  state.timelineKiln = TIMELINE_ALL_KILNS;
+  state.selectedImageId = null;
+  applyFilters();
 }
 
 function renderStats() {
@@ -235,15 +310,36 @@ function renderMergeSummary() {
 
 function renderViewHeader() {
   if (state.viewMode === "timeline") {
+    ensureTimelineKilnSelection();
     const objects = timelineObjects();
     const groups = buildTimelineGroups(objects);
-    els.viewTitle.textContent = `${state.timelineKiln || "未选择窑口"}时间轴`;
-    els.viewSubtitle.textContent = `${groups.length} 个时代 · ${objects.length} 件器物，按窑口/文化观察形制变化`;
+    const phase = currentPhase();
+    const phaseScope = phase ? phase.label : "全部论文分期";
+    const kilnScope = selectedTimelineAllKilns() ? "全部窑口/文化" : state.timelineKiln;
+    els.viewTitle.textContent = timelineTitle(phase);
+    els.viewSubtitle.textContent = `${groups.length} 个朝代/时期 · ${objects.length} 件器物 · ${phaseScope} · ${kilnScope}`;
     return;
   }
-  const phase = state.selectedPhase === "all" ? null : state.catalog.phases.find((item) => item.id === state.selectedPhase);
+  const phase = currentPhase();
   els.viewTitle.textContent = phase ? phase.label : "全部条目";
   els.viewSubtitle.textContent = `${state.filteredObjects.length} 件符合当前筛选`;
+}
+
+function currentPhase() {
+  return state.selectedPhase === "all" ? null : state.catalog.phases.find((item) => item.id === state.selectedPhase) ?? null;
+}
+
+function timelineTitle(phase) {
+  if (phase && !selectedTimelineAllKilns()) {
+    return `${shortPhaseLabel(phase.label)} · ${state.timelineKiln}时间轴`;
+  }
+  if (phase) {
+    return `${phase.label}时间轴`;
+  }
+  if (!selectedTimelineAllKilns()) {
+    return `${state.timelineKiln}时间轴`;
+  }
+  return "全部时间轴";
 }
 
 function renderGallery() {
@@ -252,6 +348,7 @@ function renderGallery() {
     renderTimeline();
     return;
   }
+  stopTimelineEdgeScroll();
   els.gallery.className = "gallery";
   if (!state.filteredObjects.length) {
     const empty = document.createElement("div");
@@ -299,15 +396,12 @@ function renderViewControls() {
   els.timelineViewMode.classList.toggle("active", state.viewMode === "timeline");
   els.timelineKilnSelect.classList.toggle("hidden", state.viewMode !== "timeline");
 
-  const kilnOptions = availableTimelineKilns();
-  if (!state.timelineKiln && kilnOptions.length) {
-    state.timelineKiln = kilnOptions[0].label;
-  }
+  const kilnOptions = ensureTimelineKilnSelection();
   const optionNodes = kilnOptions.map((item) => {
     const option = document.createElement("option");
-    option.value = item.label;
-    option.textContent = `${item.label}（${item.eraCount} 期 · ${item.count} 件）`;
-    option.selected = item.label === state.timelineKiln;
+    option.value = item.value;
+    option.textContent = `${item.label}（${item.eraCount} 朝代/时期 · ${item.count} 件）`;
+    option.selected = item.value === state.timelineKiln;
     return option;
   });
   els.timelineKilnSelect.replaceChildren(...optionNodes);
@@ -320,7 +414,7 @@ function renderTimeline() {
   if (!groups.length) {
     const empty = document.createElement("div");
     empty.className = "empty timeline-empty";
-    empty.textContent = "这个窑口在当前筛选下没有条目";
+    empty.textContent = "当前时间轴筛选下没有条目";
     els.gallery.replaceChildren(empty);
     return;
   }
@@ -413,6 +507,72 @@ function bindTimelineCard(card, object) {
       selectObject(object.id);
     }
   });
+}
+
+function setupTimelineEdgeScroll() {
+  els.gallery.addEventListener("mousemove", updateTimelineEdgeScroll);
+  els.gallery.addEventListener("mouseleave", stopTimelineEdgeScroll);
+}
+
+function updateTimelineEdgeScroll(event) {
+  if (state.viewMode !== "timeline" || !els.gallery.classList.contains("timeline-view")) {
+    stopTimelineEdgeScroll();
+    return;
+  }
+
+  const maxScroll = els.gallery.scrollWidth - els.gallery.clientWidth;
+  if (maxScroll <= 0) {
+    stopTimelineEdgeScroll();
+    return;
+  }
+
+  const rect = els.gallery.getBoundingClientRect();
+  const leftDistance = event.clientX - rect.left;
+  const rightDistance = rect.right - event.clientX;
+  let velocity = 0;
+
+  if (leftDistance >= 0 && leftDistance < TIMELINE_EDGE_SCROLL_ZONE) {
+    const intensity = 1 - leftDistance / TIMELINE_EDGE_SCROLL_ZONE;
+    velocity = -Math.max(3, TIMELINE_EDGE_SCROLL_MAX_SPEED * intensity);
+  } else if (rightDistance >= 0 && rightDistance < TIMELINE_EDGE_SCROLL_ZONE) {
+    const intensity = 1 - rightDistance / TIMELINE_EDGE_SCROLL_ZONE;
+    velocity = Math.max(3, TIMELINE_EDGE_SCROLL_MAX_SPEED * intensity);
+  }
+
+  timelineEdgeScroll.velocity = velocity;
+  els.gallery.classList.toggle("timeline-edge-left-active", velocity < 0);
+  els.gallery.classList.toggle("timeline-edge-right-active", velocity > 0);
+
+  if (velocity !== 0 && timelineEdgeScroll.frameId === null) {
+    timelineEdgeScroll.frameId = requestAnimationFrame(stepTimelineEdgeScroll);
+  }
+}
+
+function stepTimelineEdgeScroll() {
+  if (state.viewMode !== "timeline" || timelineEdgeScroll.velocity === 0) {
+    stopTimelineEdgeScroll();
+    return;
+  }
+
+  const maxScroll = els.gallery.scrollWidth - els.gallery.clientWidth;
+  const nextScrollLeft = Math.max(0, Math.min(maxScroll, els.gallery.scrollLeft + timelineEdgeScroll.velocity));
+  els.gallery.scrollLeft = nextScrollLeft;
+
+  if ((nextScrollLeft === 0 && timelineEdgeScroll.velocity < 0) || (nextScrollLeft === maxScroll && timelineEdgeScroll.velocity > 0)) {
+    timelineEdgeScroll.velocity = 0;
+    els.gallery.classList.remove("timeline-edge-left-active", "timeline-edge-right-active");
+  }
+
+  timelineEdgeScroll.frameId = timelineEdgeScroll.velocity === 0 ? null : requestAnimationFrame(stepTimelineEdgeScroll);
+}
+
+function stopTimelineEdgeScroll() {
+  timelineEdgeScroll.velocity = 0;
+  if (timelineEdgeScroll.frameId !== null) {
+    cancelAnimationFrame(timelineEdgeScroll.frameId);
+    timelineEdgeScroll.frameId = null;
+  }
+  els.gallery.classList.remove("timeline-edge-left-active", "timeline-edge-right-active");
 }
 
 function selectObject(objectId) {
@@ -602,14 +762,19 @@ function renderImageStrip(object, activeImageId) {
   els.imageStrip.replaceChildren(...thumbs);
 }
 
+function currentSelectionPool() {
+  return state.viewMode === "timeline" ? timelineObjects() : state.filteredObjects;
+}
+
 function moveSelection(offset) {
-  if (!state.filteredObjects.length) return;
+  const pool = currentSelectionPool();
+  if (!pool.length) return;
   const currentIndex = Math.max(
     0,
-    state.filteredObjects.findIndex((object) => object.id === state.selectedObjectId),
+    pool.findIndex((object) => object.id === state.selectedObjectId),
   );
-  const nextIndex = (currentIndex + offset + state.filteredObjects.length) % state.filteredObjects.length;
-  state.selectedObjectId = state.filteredObjects[nextIndex].id;
+  const nextIndex = (currentIndex + offset + pool.length) % pool.length;
+  state.selectedObjectId = pool[nextIndex].id;
   state.selectedImageId = null;
   state.reviewSaveMessage = "";
   preserveGalleryScroll(() => render());
@@ -655,6 +820,7 @@ function escapeHtml(value) {
 }
 
 function bindEvents() {
+  setupTimelineEdgeScroll();
   els.searchInput.addEventListener("input", (event) => {
     state.query = event.target.value.trim();
     applyFilters();
@@ -673,7 +839,6 @@ function bindEvents() {
   });
   els.timelineViewMode.addEventListener("click", () => {
     state.viewMode = "timeline";
-    state.selectedPhase = "all";
     applyFilters();
   });
   els.timelineKilnSelect.addEventListener("change", (event) => {
@@ -683,6 +848,7 @@ function bindEvents() {
   });
   els.clearFilters.addEventListener("click", () => {
     state.selectedPhase = "all";
+    state.timelineKiln = TIMELINE_ALL_KILNS;
     state.query = "";
     state.nature = "all";
     state.status = "all";
@@ -707,7 +873,7 @@ async function init() {
     state.objects = state.catalog.objects;
     state.filteredObjects = state.objects;
     state.imageById = new Map(state.catalog.images.map((image) => [image.id, image]));
-    state.timelineKiln = availableTimelineKilns()[0]?.label ?? "";
+    state.timelineKiln = TIMELINE_ALL_KILNS;
     state.selectedObjectId = state.objects[0]?.id ?? null;
     render();
   } catch (error) {

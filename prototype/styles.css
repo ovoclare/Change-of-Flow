@@ -245,8 +245,53 @@ h2 {
 
 .gallery.timeline-view {
   display: block;
+  position: relative;
   overflow: auto;
   padding: 0;
+}
+
+.gallery.timeline-view::before,
+.gallery.timeline-view::after {
+  position: sticky;
+  z-index: 5;
+  top: 0;
+  bottom: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 86px;
+  min-height: 100%;
+  color: rgba(255, 255, 255, 0.96);
+  font-size: 34px;
+  font-weight: 800;
+  line-height: 1;
+  pointer-events: none;
+  text-shadow: 0 2px 14px rgba(31, 35, 40, 0.22);
+  opacity: 0.74;
+  transition: opacity 160ms ease, transform 160ms ease, color 160ms ease;
+}
+
+.gallery.timeline-view::before {
+  content: "‹";
+  float: left;
+  left: 0;
+  margin-right: -86px;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.58) 56%, rgba(255, 255, 255, 0));
+}
+
+.gallery.timeline-view::after {
+  content: "›";
+  float: right;
+  right: 0;
+  margin-left: -86px;
+  background: linear-gradient(270deg, rgba(255, 255, 255, 0.94), rgba(255, 255, 255, 0.58) 56%, rgba(255, 255, 255, 0));
+}
+
+.gallery.timeline-view.timeline-edge-left-active::before,
+.gallery.timeline-view.timeline-edge-right-active::after {
+  color: #fff;
+  opacity: 0.98;
+  transform: scale(1.06);
 }
 
 .timeline-board {

@@ -5,7 +5,7 @@ import hashlib
 import json
 import re
 import struct
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -25,8 +25,116 @@ PHASES = [
 PHASE_BY_ID = {phase["id"]: phase for phase in PHASES}
 
 
-def normalize_object_title(file_name: str) -> str:
+GENERIC_SOURCE_TAGS = {"原文件", "待补来源", "待考证", "未知", "无", "source"}
+FLOW_SHAPE_KEYWORDS = [
+    "流形待考",
+    "提梁曲流",
+    "短曲流",
+    "长直流",
+    "动物或异形流",
+    "龙柄流",
+    "龙首流",
+    "兽头流",
+    "鸡首流",
+    "鸡头流",
+    "鸭嘴流",
+    "象鼻流",
+    "管状流",
+    "筒状流",
+    "军持流",
+    "曲流",
+    "长流",
+    "直流",
+    "短流",
+]
+
+
+def clean_field(value: str | None) -> str:
+    value = (value or "").strip()
+    value = value.replace("鬹", "鬶").replace("鸡头", "鸡首")
+    value = re.sub(r"\s+", " ", value)
+    return value.strip(" -_，,；;")
+
+
+def remove_view_suffix(value: str) -> str:
+    value = clean_field(value)
+    value = re.sub(r"\s*[（(]\s*\d+\s*[）)]\s*$", "", value)
+    value = re.sub(r"\s*[（(]\s*[A-Za-z]\s*[）)]\s*$", "", value)
+    value = re.sub(r"[-_ ]+\d+\s*$", "", value)
+    return value.strip()
+
+
+def parse_catalog_file_name(file_name: str) -> dict[str, str] | None:
+    """Parse the current naming rule: Prefix-0000_时代_窑口或文化_器名_流形态_来源."""
     stem = Path(file_name).stem.strip()
+    parts = [clean_field(part) for part in stem.split("_")]
+    if len(parts) < 6 or not re.match(r"^[A-Za-z]-\d{4}[A-Za-z]?$", parts[0]):
+        return None
+    prefix, number = parts[0].split("-", 1)
+    era = parts[1]
+    kiln_or_culture = parts[2]
+    vessel = clean_field("_".join(parts[3:-2]))
+    flow_form = parts[-2]
+    source = parts[-1]
+    title = normalize_named_title(era, kiln_or_culture, vessel, flow_form, source)
+    return {
+        "prefix": prefix.upper(),
+        "number": number,
+        "era": era,
+        "kilnOrCulture": kiln_or_culture,
+        "vessel": vessel,
+        "flowForm": flow_form,
+        "sourceOrCollection": source,
+        "title": title,
+    }
+
+
+def normalize_named_title(era: str, kiln_or_culture: str, vessel: str, flow_form: str, source: str) -> str:
+    # The intended title is the 器名 field.  A few existing files put the real器名
+    # in the final slot; when that final slot does not look like a source tag, keep it.
+    vessel = remove_view_suffix(vessel)
+    source = remove_view_suffix(source)
+    if not looks_like_era(era) and looks_like_vessel_title(era):
+        return remove_view_suffix(era)
+    if source and source not in GENERIC_SOURCE_TAGS and not looks_like_collection(source):
+        if not vessel or vessel in {"待考证", "未知"}:
+            return source
+        if looks_like_kiln(vessel) and looks_like_vessel_title(source):
+            return f"{vessel}-{source}"
+    return vessel or source or "待判断"
+
+
+def looks_like_collection(value: str) -> bool:
+    return any(word in value for word in ["博物馆", "故宫", "大都会", "馆藏", "遗址", "美术馆", "Museum", "museum", "Met", "佳士得", "苏富比"])
+
+
+def looks_like_era(value: str) -> bool:
+    value = clean_field(value)
+    if not value:
+        return False
+    era_words = [
+        "新石器", "河姆渡", "良渚", "大汶口", "龙山", "齐家", "二里头",
+        "夏", "商", "周", "战国", "秦", "汉", "魏", "晋", "南朝", "北朝",
+        "隋", "唐", "五代", "宋", "辽", "金", "西夏", "元", "明", "清",
+        "民国", "现代", "待考证",
+    ]
+    return any(word in value for word in era_words)
+
+
+def looks_like_kiln(value: str) -> bool:
+    return value.endswith("窑") or value in {"越窑", "龙泉窑", "景德镇窑", "宜兴窑", "宜兴紫砂", "青瓷系", "白瓷系", "待考证"}
+
+
+def looks_like_vessel_title(value: str) -> bool:
+    return any(word in value for word in ["壶", "盉", "鬶", "爵", "杯", "注子", "军持", "流", "瓶", "罐"])
+
+
+def normalize_object_title(file_name: str) -> str:
+    parsed = parse_catalog_file_name(file_name)
+    if parsed:
+        return remove_view_suffix(parsed["title"])
+    stem = Path(file_name).stem.strip()
+    stem = re.sub(r"^[A-Za-z]-\d{4}[A-Za-z]?[-_]+", "", stem)
     stem = stem.replace("鬹", "鬶").replace("鸡头", "鸡首")
     stem = re.sub(r"\s+", " ", stem)
     stem = re.sub(r"\s*[（(]\s*\d+\s*[）)]\s*$", "", stem)
@@ -59,7 +167,9 @@ def build_catalog(source_root: str | Path, existing_catalog: dict[str, Any] | No
     existing_objects = existing_catalog.get("objects", [])
     existing_images = existing_catalog.get("images", [])
     existing_by_key = {obj.get("objectKey"): obj for obj in existing_objects if obj.get("objectKey")}
+    existing_by_id = {obj.get("id"): obj for obj in existing_objects if obj.get("id")}
     existing_images_by_path = {img.get("path"): img for img in existing_images if img.get("path")}
+    existing_images_by_relative_path = {img.get("relativePath"): img for img in existing_images if img.get("relativePath")}
     existing_images_by_sha1 = {img.get("sha1"): img for img in existing_images if img.get("sha1")}
 
     used_object_ids: set[str] = set()
@@ -78,19 +188,31 @@ def build_catalog(source_root: str | Path, existing_catalog: dict[str, Any] | No
 
     for object_key in sorted(groups):
         paths = groups[object_key]
+        path_infos: list[tuple[Path, str, dict[str, Any] | None]] = []
+        prior_object_ids: list[str] = []
+        for path in sorted(paths, key=lambda item: item.as_posix()):
+            relative_path = path.relative_to(root)
+            sha1 = file_sha1(path)
+            previous_image = (
+                existing_images_by_path.get(str(path))
+                or existing_images_by_relative_path.get(relative_path.as_posix())
+                or existing_images_by_sha1.get(sha1)
+            )
+            if previous_image and previous_image.get("objectId"):
+                prior_object_ids.append(previous_image["objectId"])
+            path_infos.append((path, sha1, previous_image))
+
         sample = paths[0]
         relative_sample = sample.relative_to(root)
         title = normalize_object_title(sample.name)
         phase = classify_phase(relative_sample)
-        existing_object = existing_by_key.get(object_key)
+        existing_object = existing_by_key.get(object_key) or best_existing_object(prior_object_ids, existing_by_id)
         object_id = existing_object.get("id") if existing_object else next_id("HL", used_object_ids, existing_objects)
         used_object_ids.add(object_id)
         image_ids: list[str] = []
 
-        for path in sorted(paths, key=lambda item: item.as_posix()):
+        for path, sha1, previous_image in path_infos:
             relative_path = path.relative_to(root)
-            sha1 = file_sha1(path)
-            previous_image = existing_images_by_path.get(str(path)) or existing_images_by_sha1.get(sha1)
             image_id = previous_image.get("id") if previous_image else next_id("IMG", used_image_ids, existing_images)
             used_image_ids.add(image_id)
             width, height = image_dimensions(path)
@@ -120,14 +242,6 @@ def build_catalog(source_root: str | Path, existing_catalog: dict[str, Any] | No
             existing_object=existing_object,
         )
 
-    for existing_object in existing_objects:
-        object_id = existing_object.get("id")
-        if object_id and object_id not in objects_by_id:
-            retained = dict(existing_object)
-            retained["imageIds"] = []
-            objects_by_id[object_id] = retained
-            used_object_ids.add(object_id)
-
     for old_image in existing_images:
         image_id = old_image.get("id")
         if not image_id or image_id in used_image_ids:
@@ -136,6 +250,11 @@ def build_catalog(source_root: str | Path, existing_catalog: dict[str, Any] | No
         missing["fileStatus"] = "missing"
         images.append(missing)
         object_id = missing.get("objectId")
+        if object_id and object_id not in objects_by_id and object_id in existing_by_id:
+            retained = dict(existing_by_id[object_id])
+            retained["imageIds"] = []
+            objects_by_id[object_id] = retained
+            used_object_ids.add(object_id)
         if object_id in objects_by_id and image_id not in objects_by_id[object_id].setdefault("imageIds", []):
             objects_by_id[object_id]["imageIds"].append(image_id)
 
@@ -158,6 +277,16 @@ def build_catalog(source_root: str | Path, existing_catalog: dict[str, Any] | No
             "missingImageCount": sum(1 for image in images if image.get("fileStatus") == "missing"),
         },
     }
+
+
+def best_existing_object(object_ids: list[str], existing_by_id: dict[str, dict[str, Any]]) -> dict[str, Any] | None:
+    if not object_ids:
+        return None
+    for object_id, _count in Counter(object_ids).most_common():
+        existing = existing_by_id.get(object_id)
+        if existing:
+            return existing
+    return None
 
 
 def make_object_key(phase_id: str, title: str) -> str:
@@ -195,18 +324,18 @@ def make_object_record(
     return {
         "id": object_id,
         "objectKey": object_key,
-        "title": existing_object.get("title", title),
+        "title": title,
         "phaseId": phase["id"],
         "phaseLabel": phase["label"],
-        "era": existing_object.get("era") or fields["era"],
-        "vesselType": existing_object.get("vesselType") or fields["vesselType"],
-        "kilnOrCulture": existing_object.get("kilnOrCulture") or fields["kilnOrCulture"],
-        "flowForm": existing_object.get("flowForm") or fields["flowForm"],
-        "material": existing_object.get("material") or fields["material"],
-        "sourceOrCollection": existing_object.get("sourceOrCollection") or fields["sourceOrCollection"],
-        "dataNature": existing_object.get("dataNature") or fields["dataNature"],
-        "isCeramicSpoutCore": existing_object.get("isCeramicSpoutCore", fields["isCeramicSpoutCore"]),
-        "spoutRelation": existing_object.get("spoutRelation") or fields["spoutRelation"],
+        "era": fields["era"],
+        "vesselType": fields["vesselType"],
+        "kilnOrCulture": fields["kilnOrCulture"],
+        "flowForm": fields["flowForm"],
+        "material": fields["material"],
+        "sourceOrCollection": fields["sourceOrCollection"],
+        "dataNature": fields["dataNature"],
+        "isCeramicSpoutCore": fields["isCeramicSpoutCore"],
+        "spoutRelation": fields["spoutRelation"],
         "reviewStatus": existing_object.get("reviewStatus", "待审阅"),
         "notes": existing_object.get("notes", ""),
         "imageIds": image_ids,
@@ -214,9 +343,15 @@ def make_object_record(
 
 
 def infer_object_fields(title: str, relative_path: Path) -> dict[str, Any]:
-    text = f"{relative_path.as_posix()} {title}"
+    parsed = parse_catalog_file_name(relative_path.name)
+    parsed_vessel = parsed.get("vessel", "") if parsed else ""
+    parsed_era = parsed.get("era", "") if parsed else ""
+    parsed_kiln = parsed.get("kilnOrCulture", "") if parsed else ""
+    parsed_flow = parsed.get("flowForm", "") if parsed else ""
+    parsed_source = parsed.get("sourceOrCollection", "") if parsed else ""
+    text = f"{relative_path.as_posix()} {title} {parsed_vessel} {parsed_era} {parsed_kiln} {parsed_flow} {parsed_source}"
     vessel_type = first_keyword(text, ["鸡首壶", "鸡头壶", "执壶", "提梁壶", "军持", "僧帽壶", "多穆壶", "注子", "茶壶", "盉", "鬶", "爵", "壶", "杯"]) or "待判断"
-    era = first_keyword(
+    era = meaningful_era(parsed_era) or first_keyword(
         text,
         [
             "河姆渡文化",
@@ -226,6 +361,11 @@ def infer_object_fields(title: str, relative_path: Path) -> dict[str, Any]:
             "齐家文化",
             "二里头文化",
             "魏晋南北朝",
+            "五代北宋",
+            "清宣统民国",
+            "清嘉庆",
+            "清乾隆",
+            "清康熙",
             "明晚期",
             "明宣德",
             "明永乐",
@@ -233,35 +373,42 @@ def infer_object_fields(title: str, relative_path: Path) -> dict[str, Any]:
             "明嘉靖",
             "明万历",
             "明隆庆",
-            "清乾隆",
-            "清康熙",
+            "夏商周",
+            "商早期",
+            "商周",
+            "西周",
             "东晋",
             "南朝",
-            "唐",
-            "五代",
             "北宋",
             "南宋",
             "宋元",
-            "宋",
             "元至明",
-            "元",
             "明初",
-            "明",
+            "清末",
             "晚清",
             "民国",
             "现代",
+            "新石器时代",
             "战国",
-            "西周",
-            "商周",
-            "商",
+            "辽代",
+            "金代",
+            "五代",
+            "唐",
+            "辽",
+            "金",
+            "宋",
+            "元",
+            "明",
             "夏",
+            "商",
+            "汉",
             "清",
         ],
     ) or "待判断"
-    kiln = infer_kiln_or_culture(text)
+    kiln = meaningful_field(parsed_kiln) or infer_kiln_or_culture(text)
     material = first_keyword(text, ["青铜", "紫砂", "白瓷", "青白瓷", "影青", "青瓷", "原始瓷", "陶质", "陶", "瓷"]) or "待判断"
-    flow_form = infer_flow_form(text)
-    source = infer_source_or_collection(title)
+    flow_form = meaningful_flow(parsed_flow) or infer_flow_form(text)
+    source = meaningful_source(parsed_source, text, title)
     predecessor = is_predecessor_reference(text, vessel_type, material)
     return {
         "era": era,
@@ -274,6 +421,37 @@ def infer_object_fields(title: str, relative_path: Path) -> dict[str, Any]:
         "isCeramicSpoutCore": not predecessor,
         "spoutRelation": "流部起源、功能参照或形态参照" if predecessor else "壶流形制主体资料",
     }
+
+
+def meaningful_era(value: str) -> str | None:
+    value = meaningful_field(value)
+    if value and looks_like_era(value):
+        return value
+    return None
+
+
+def meaningful_field(value: str) -> str | None:
+    value = clean_field(value)
+    if not value or value in {"待考证", "未知", "待判断"}:
+        return None
+    return value
+
+
+def meaningful_flow(value: str) -> str | None:
+    value = clean_field(value)
+    if not value or value in {"待考证", "待判断", "流形待考"}:
+        return None
+    return value
+
+
+def meaningful_source(value: str, text: str, title: str) -> str:
+    value = clean_field(value)
+    if value and value not in GENERIC_SOURCE_TAGS and looks_like_collection(value):
+        return value
+    inferred = infer_source_or_collection(text)
+    if inferred != "待补来源":
+        return inferred
+    return infer_source_or_collection(title)
 
 
 def first_keyword(text: str, keywords: list[str]) -> str | None:

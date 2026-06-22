@@ -67,6 +67,28 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("object.kilnOrCulture", app)
         self.assertIn("object.era", app)
 
+    def test_timeline_has_all_option_and_honors_phase_filter(self):
+        app = self.read("prototype/app.js")
+        self.assertIn('const TIMELINE_ALL_KILNS = "__all__"', app)
+        self.assertIn('label: "全部"', app)
+        self.assertIn("if (!matchesFilters(object)) return false", app)
+        self.assertIn("selectedTimelineAllKilns", app)
+
+    def test_timeline_kiln_selection_does_not_call_itself(self):
+        app = self.read("prototype/app.js")
+        start = app.index("function ensureTimelineKilnSelection")
+        end = app.index("function timelineObjects", start)
+        body = app[start:end]
+        self.assertIn("availableTimelineKilns()", body)
+        self.assertNotIn("const kilnOptions = ensureTimelineKilnSelection();", body)
+
+    def test_phase_click_resets_timeline_kiln_scope(self):
+        app = self.read("prototype/app.js")
+        self.assertIn("function selectPhase", app)
+        self.assertIn("state.timelineKiln = TIMELINE_ALL_KILNS", app)
+        self.assertIn('button.addEventListener("click", () => selectPhase(phase.id))', app)
+        self.assertNotIn('state.selectedPhase = "all";\n    applyFilters();\n  });\n  els.timelineKilnSelect', app)
+
     def test_timeline_layout_css_exists(self):
         css = self.read("prototype/styles.css")
         self.assertIn(".timeline-view", css)
@@ -98,6 +120,37 @@ class FrontendContractTests(unittest.TestCase):
         self.assertIn("height 180ms ease", css)
         self.assertIn(".timeline-featured:hover img", css)
         self.assertIn(".timeline-object:hover", css)
+
+    def test_timeline_edge_hover_auto_scroll_exists(self):
+        app = self.read("prototype/app.js")
+        css = self.read("prototype/styles.css")
+        self.assertIn("TIMELINE_EDGE_SCROLL_ZONE", app)
+        self.assertIn("timelineEdgeScroll", app)
+        self.assertIn("setupTimelineEdgeScroll", app)
+        self.assertIn("updateTimelineEdgeScroll", app)
+        self.assertIn("requestAnimationFrame", app)
+        self.assertIn("els.gallery.scrollLeft", app)
+        self.assertIn('els.gallery.addEventListener("mousemove"', app)
+        self.assertIn('els.gallery.addEventListener("mouseleave"', app)
+        self.assertIn(".gallery.timeline-view::before", css)
+        self.assertIn(".gallery.timeline-view::after", css)
+        self.assertIn("linear-gradient", css)
+        self.assertIn('content: "‹"', css)
+        self.assertIn('content: "›"', css)
+        self.assertIn("pointer-events: none", css)
+
+    def test_timeline_uses_dynasty_level_era_labels(self):
+        app = self.read("prototype/app.js")
+        self.assertIn("function timelineEraLabel", app)
+        self.assertIn('[/清宣统民国|清末民国|清至民国/, "清—民国"]', app)
+        self.assertIn('if (/明初|明中期|明晚期|明代|明|洪武|永乐|宣德|嘉靖|隆庆|万历/.test(compact)) return "明";', app)
+        self.assertIn('if (/清代|清|康熙|雍正|乾隆|嘉庆|道光|光绪|宣统|晚清|清末|十八世纪|十九世纪/.test(compact)) return "清";', app)
+        self.assertIn("const era = timelineEraLabel(object.era);", app)
+
+    def test_timeline_labels_count_dynasties_not_fine_periods(self):
+        app = self.read("prototype/app.js")
+        self.assertIn("个朝代/时期", app)
+        self.assertIn("朝代/时期 ·", app)
 
 
 if __name__ == "__main__":
